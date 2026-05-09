@@ -1,0 +1,30 @@
+# VoltForge .gitignore
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IDE ###
+.idea
+*.iws
+*.iml
+*.ipr
+.vscode/
+
+### Maven ###
+.mvn/
+mvnw
+mvnw.cmd
+
+### Environment ###
+.env
+*.env.local
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/

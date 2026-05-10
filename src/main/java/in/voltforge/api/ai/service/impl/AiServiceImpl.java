@@ -294,4 +294,174 @@ public class AiServiceImpl implements AiService {
                 "  delay(1000);\n" +
                 "}\n";
     }
+
+    @Override
+    public AiCodeReviewResponse reviewCode(AiCodeReviewRequest request) {
+        log.info("AI code review requested for board: {}", request.getBoardType());
+
+        String systemPrompt = """
+                You are VoltForge AI Code Reviewer. Analyze the Arduino/ESP32 code and respond with:
+                1. A brief summary of what the code does
+                2. A JSON block with format: {"score": 0-100, "issues": [{"severity":"ERROR|WARNING|INFO","line":1,"message":"...","fix":"..."}], "suggestions": ["..."]}
+                3. An improved version of the code in a code block
+                Be strict about pin safety, memory leaks, and timing issues.
+                """;
+
+        String userPrompt = String.format("Board: %s\nComponents: %s\n\nCode:\n```\n%s\n```",
+                request.getBoardType(),
+                request.getComponentTypes() != null ? String.join(", ", request.getComponentTypes()) : "unknown",
+                request.getCode());
+
+        String response = callOllama(systemPrompt, userPrompt);
+
+        // Parse response
+        List<AiCodeReviewResponse.ReviewIssue> issues = new ArrayList<>();
+        List<String> suggestions = new ArrayList<>();
+        int score = 70;
+
+        try {
+            Pattern jsonPattern = Pattern.compile("\\{[^{}]*\"score\".*?\\}", Pattern.DOTALL);
+            Matcher matcher = jsonPattern.matcher(response);
+            if (matcher.find()) {
+                JsonNode node = objectMapper.readTree(matcher.group());
+                if (node.has("score")) score = node.get("score").asInt();
+                if (node.has("issues")) {
+                    for (JsonNode issue : node.get("issues")) {
+                        issues.add(AiCodeReviewResponse.ReviewIssue.builder()
+                                .severity(issue.has("severity") ? issue.get("severity").asText() : "INFO")
+                                .line(issue.has("line") ? issue.get("line").asInt() : 0)
+                                .message(issue.has("message") ? issue.get("message").asText() : "")
+                                .fix(issue.has("fix") ? issue.get("fix").asText() : "")
+                                .build());
+                    }
+                }
+                if (node.has("suggestions")) {
+                    for (JsonNode s : node.get("suggestions")) {
+                        suggestions.add(s.asText());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not parse code review JSON: {}", e.getMessage());
+            suggestions.add("Review completed but detailed parsing failed.");
+        }
+
+        String improvedCode = extractCodeBlock(response);
+
+        return AiCodeReviewResponse.builder()
+                .summary(cleanMarkdown(response).substring(0, Math.min(cleanMarkdown(response).length(), 500)))
+                .issues(issues)
+                .suggestions(suggestions)
+                .improvedCode(improvedCode)
+                .score(score)
+                .build();
+    }
+
+    @Override
+    public AiGenerateResponse schematicToCode(AiSchematicToCodeRequest request) {
+        log.info("AI schematic-to-code requested for board: {}", request.getBoardType());
+
+        StringBuilder componentDesc = new StringBuilder();
+        if (request.getComponents() != null) {
+            for (AiSchematicToCodeRequest.ComponentInfo c : request.getComponents()) {
+                componentDesc.append(String.format("- %s (%s)", c.getName(), c.getType()));
+                if (c.getProperties() != null) componentDesc.append(" props: ").append(c.getProperties());
+                componentDesc.append("\n");
+            }
+        }
+
+        StringBuilder wireDesc = new StringBuilder();
+        if (request.getWires() != null) {
+            for (AiSchematicToCodeRequest.WireInfo w : request.getWires()) {
+                wireDesc.append(String.format("- %s.%s -> %s.%s\n", w.getFromComponent(), w.getFromPin(), w.getToComponent(), w.getToPin()));
+            }
+        }
+
+        String systemPrompt = """
+                You are VoltForge AI, an expert Arduino/ESP32 programmer.
+                Generate complete, working code based on the circuit schematic provided.
+                Include proper pin definitions, setup(), and loop() functions.
+                Add helpful comments explaining each section.
+                Use appropriate libraries for the components listed.
+                """;
+
+        String userPrompt = String.format("Board: %s\n\nComponents:\n%s\nWiring:\n%s\n%s",
+                request.getBoardType(), componentDesc, wireDesc,
+                request.getAdditionalInstructions() != null ? "Instructions: " + request.getAdditionalInstructions() : "");
+
+        String response = callOllama(systemPrompt, userPrompt);
+        String code = extractCodeBlock(response);
+        if (code.isEmpty()) code = generateFallbackCode("schematic-to-code");
+
+        return AiGenerateResponse.builder()
+                .status("success")
+                .message(cleanMarkdown(response))
+                .generatedCode(code)
+                .build();
+    }
+
+    @Override
+    public AiValidatorResponse validateCircuit(AiValidatorRequest request) {
+        log.info("AI circuit validation requested for board: {}", request.getBoardType());
+
+        StringBuilder componentDesc = new StringBuilder();
+        if (request.getComponents() != null) {
+            for (AiValidatorRequest.ComponentInfo c : request.getComponents()) {
+                componentDesc.append(String.format("- %s (%s, ID: %s)\n", c.getName(), c.getType(), c.getId()));
+            }
+        }
+
+        StringBuilder wireDesc = new StringBuilder();
+        if (request.getWires() != null) {
+            for (AiValidatorRequest.WireInfo w : request.getWires()) {
+                wireDesc.append(String.format("- %s.%s -> %s.%s\n", w.getFromComponent(), w.getFromPin(), w.getToComponent(), w.getToPin()));
+            }
+        }
+
+        String systemPrompt = """
+                You are VoltForge AI Circuit Validator. Analyze the schematic and respond with:
+                1. A brief general feedback string.
+                2. A JSON block with format: {"isValid": true/false, "safetyScore": 0-100, "issues": [{"severity":"CRITICAL|WARNING|INFO","componentId":"...","message":"...","suggestedFix":"..."}]}
+                Check for missing ground/power, incorrect LED wiring (no resistor), short circuits, and improper voltage levels.
+                """;
+
+        String userPrompt = String.format("Board: %s\n\nComponents:\n%s\nWiring:\n%s",
+                request.getBoardType(), componentDesc, wireDesc);
+
+        String response = callOllama(systemPrompt, userPrompt);
+
+        // Parse response
+        List<AiValidatorResponse.ValidationIssue> issues = new ArrayList<>();
+        boolean isValid = true;
+        int safetyScore = 100;
+
+        try {
+            Pattern jsonPattern = Pattern.compile("\\{[^{}]*\"safetyScore\".*?\\}", Pattern.DOTALL);
+            Matcher matcher = jsonPattern.matcher(response);
+            if (matcher.find()) {
+                JsonNode node = objectMapper.readTree(matcher.group());
+                if (node.has("isValid")) isValid = node.get("isValid").asBoolean();
+                if (node.has("safetyScore")) safetyScore = node.get("safetyScore").asInt();
+                if (node.has("issues")) {
+                    for (JsonNode issue : node.get("issues")) {
+                        issues.add(AiValidatorResponse.ValidationIssue.builder()
+                                .severity(issue.has("severity") ? issue.get("severity").asText() : "INFO")
+                                .componentId(issue.has("componentId") ? issue.get("componentId").asText() : "")
+                                .message(issue.has("message") ? issue.get("message").asText() : "")
+                                .suggestedFix(issue.has("suggestedFix") ? issue.get("suggestedFix").asText() : "")
+                                .build());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not parse validator JSON: {}", e.getMessage());
+        }
+
+        return AiValidatorResponse.builder()
+                .isValid(isValid)
+                .safetyScore(safetyScore)
+                .issues(issues)
+                .generalFeedback(cleanMarkdown(response).substring(0, Math.min(cleanMarkdown(response).length(), 500)))
+                .build();
+    }
 }

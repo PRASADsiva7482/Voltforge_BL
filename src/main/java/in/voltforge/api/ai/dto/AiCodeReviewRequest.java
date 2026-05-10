@@ -1,0 +1,19 @@
+package in.voltforge.api.ai.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class AiCodeReviewRequest {
+    private String code;
+    private String boardType;
+    private List<String> componentTypes;
+    private String circuitDescription;
+}

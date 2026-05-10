@@ -49,4 +49,28 @@ public class AiController {
         AiChatResponse response = aiService.chat(request);
         return ResponseEntity.ok(ApiResponse.success("AI response generated", response));
     }
+
+    @PostMapping("/review-code")
+    @Operation(summary = "AI-powered code review and analysis")
+    public ResponseEntity<ApiResponse<AiCodeReviewResponse>> reviewCode(
+            @Valid @RequestBody AiCodeReviewRequest request) {
+        AiCodeReviewResponse response = aiService.reviewCode(request);
+        return ResponseEntity.ok(ApiResponse.success("Code review completed", response));
+    }
+
+    @PostMapping("/schematic-to-code")
+    @Operation(summary = "Generate code from circuit schematic layout")
+    public ResponseEntity<ApiResponse<AiGenerateResponse>> schematicToCode(
+            @Valid @RequestBody AiSchematicToCodeRequest request) {
+        AiGenerateResponse response = aiService.schematicToCode(request);
+        return ResponseEntity.ok(ApiResponse.success("Code generated from schematic", response));
+    }
+
+    @PostMapping("/validate-circuit")
+    @Operation(summary = "Validate circuit safety and logic")
+    public ResponseEntity<ApiResponse<AiValidatorResponse>> validateCircuit(
+            @Valid @RequestBody AiValidatorRequest request) {
+        AiValidatorResponse response = aiService.validateCircuit(request);
+        return ResponseEntity.ok(ApiResponse.success("Circuit validation completed", response));
+    }
 }

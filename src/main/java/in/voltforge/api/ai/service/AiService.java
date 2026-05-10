@@ -11,4 +11,10 @@ public interface AiService {
     AiGenerateResponse generateCode(AiGenerateRequest request);
 
     AiChatResponse chat(AiChatRequest request);
+
+    AiCodeReviewResponse reviewCode(AiCodeReviewRequest request);
+
+    AiGenerateResponse schematicToCode(AiSchematicToCodeRequest request);
+
+    AiValidatorResponse validateCircuit(AiValidatorRequest request);
 }

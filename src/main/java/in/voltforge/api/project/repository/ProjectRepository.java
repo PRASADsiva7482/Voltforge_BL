@@ -24,6 +24,9 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
            "LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
     Page<Project> searchPublicProjects(@Param("query") String query, Pageable pageable);
 
+    @Query("SELECT p FROM Project p WHERE p.isPublic = true AND LOWER(p.tags) LIKE '%template%'")
+    Page<Project> findTemplates(Pageable pageable);
+
     List<Project> findByForkedFromId(String projectId);
 
     long countByOwnerId(String ownerId);

@@ -102,4 +102,13 @@ public class ProjectController {
         PagedResponse<ProjectSummaryResponse> projects = projectService.searchPublicProjects(query, page, size);
         return ResponseEntity.ok(ApiResponse.success(projects));
     }
+
+    @GetMapping("/templates")
+    @Operation(summary = "Get official project templates")
+    public ResponseEntity<ApiResponse<PagedResponse<ProjectSummaryResponse>>> getTemplates(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PagedResponse<ProjectSummaryResponse> templates = projectService.getTemplates(page, size);
+        return ResponseEntity.ok(ApiResponse.success(templates));
+    }
 }

@@ -271,4 +271,25 @@ public class ProjectServiceImpl implements ProjectService {
                 .last(projectPage.isLast())
                 .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<ProjectSummaryResponse> getTemplates(int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "forkCount"));
+        Page<Project> projectPage = projectRepository.findTemplates(pageRequest);
+
+        List<ProjectSummaryResponse> content = projectPage.getContent().stream()
+                .map(projectMapper::toSummaryResponse)
+                .collect(Collectors.toList());
+
+        return PagedResponse.<ProjectSummaryResponse>builder()
+                .content(content)
+                .page(projectPage.getNumber())
+                .size(projectPage.getSize())
+                .totalElements(projectPage.getTotalElements())
+                .totalPages(projectPage.getTotalPages())
+                .first(projectPage.isFirst())
+                .last(projectPage.isLast())
+                .build();
+    }
 }

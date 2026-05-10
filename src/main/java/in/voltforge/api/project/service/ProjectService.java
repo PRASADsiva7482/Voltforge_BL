@@ -23,4 +23,6 @@ public interface ProjectService {
     PagedResponse<ProjectSummaryResponse> getPublicProjects(int page, int size);
 
     PagedResponse<ProjectSummaryResponse> searchPublicProjects(String query, int page, int size);
+
+    PagedResponse<ProjectSummaryResponse> getTemplates(int page, int size);
 }

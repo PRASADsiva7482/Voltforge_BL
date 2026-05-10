@@ -94,6 +94,14 @@ app:
       base-url: ${OLLAMA_BASE_URL:http://100.122.105.63:11434}
       model: ${OLLAMA_MODEL:gemma3}
       timeout: 120
+  simulation:
+    compiler:
+      # REMOTE posts { sketch, fqbn, boardType } to a compiler service.
+      # ARDUINO_CLI runs arduino-cli locally on this backend host.
+      mode: ${AVR_COMPILER_MODE:REMOTE}
+      remote-url: ${AVR_COMPILER_URL:https://hexi.wokwi.com/build}
+      arduino-cli-path: ${ARDUINO_CLI_PATH:arduino-cli}
+      timeout-seconds: ${AVR_COMPILER_TIMEOUT:45}
 
 # ── SpringDoc / Swagger ─────────────────────────────────────────────────────
 springdoc:

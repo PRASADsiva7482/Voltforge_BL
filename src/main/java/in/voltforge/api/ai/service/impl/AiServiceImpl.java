@@ -80,20 +80,21 @@ public class AiServiceImpl implements AiService {
 
         String systemPrompt = """
                 You are VoltForge AI, an expert at wiring electronic components.
-                Given a list of components, suggest how to wire them together.
+                Given a list of canvas components and their pins, suggest how to wire them together.
                 Respond ONLY with a JSON array of wiring suggestions. Each suggestion must have:
                 {
-                  "fromComponentId": "COMPONENT_TYPE_1",
-                  "fromPin": "pin_name",
-                  "toComponentId": "COMPONENT_TYPE_2",
-                  "toPin": "pin_name",
+                  "fromComponentId": "exact_canvas_component_id",
+                  "fromPin": "exact_pin_id_or_name",
+                  "toComponentId": "exact_canvas_component_id",
+                  "toPin": "exact_pin_id_or_name",
                   "color": "#hex_color",
                   "description": "brief description"
                 }
                 Use red (#FF5722) for power, black (#212121) for ground, blue (#2196F3) for signal.
+                Prefer exact component ids and pin ids from the user's prompt over generic component type names.
                 """;
 
-        String userPrompt = "Wire these components together: " + componentList +
+        String userPrompt = request.getPrompt() + "\n\nComponent summary: " + componentList +
                 (request.getBoardType() != null ? " on a " + request.getBoardType().name() : "");
 
         String aiResponse = callOllama(systemPrompt, userPrompt);

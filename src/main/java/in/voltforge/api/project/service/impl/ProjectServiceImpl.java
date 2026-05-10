@@ -125,15 +125,32 @@ public class ProjectServiceImpl implements ProjectService {
 
         // Update code files
         if (request.getCodeFiles() != null) {
-            project.getCodeFiles().clear();
+            java.util.Map<String, CodeFileRequest> requestedFiles = request.getCodeFiles().stream()
+                    .collect(java.util.stream.Collectors.toMap(CodeFileRequest::getFilename, f -> f));
+
+            // Remove files not in the request
+            project.getCodeFiles().removeIf(cf -> !requestedFiles.containsKey(cf.getFilename()));
+
+            // Update existing and add new
             for (CodeFileRequest cfReq : request.getCodeFiles()) {
-                CodeFile codeFile = CodeFile.builder()
-                        .filename(cfReq.getFilename())
-                        .content(cfReq.getContent())
-                        .language(cfReq.getLanguage() != null ? cfReq.getLanguage() : "cpp")
-                        .sortOrder(cfReq.getSortOrder() != null ? cfReq.getSortOrder() : 0)
-                        .build();
-                project.addCodeFile(codeFile);
+                java.util.Optional<CodeFile> existingOpt = project.getCodeFiles().stream()
+                        .filter(cf -> cf.getFilename().equals(cfReq.getFilename()))
+                        .findFirst();
+
+                if (existingOpt.isPresent()) {
+                    CodeFile existing = existingOpt.get();
+                    existing.setContent(cfReq.getContent());
+                    existing.setLanguage(cfReq.getLanguage() != null ? cfReq.getLanguage() : "cpp");
+                    existing.setSortOrder(cfReq.getSortOrder() != null ? cfReq.getSortOrder() : 0);
+                } else {
+                    CodeFile codeFile = CodeFile.builder()
+                            .filename(cfReq.getFilename())
+                            .content(cfReq.getContent())
+                            .language(cfReq.getLanguage() != null ? cfReq.getLanguage() : "cpp")
+                            .sortOrder(cfReq.getSortOrder() != null ? cfReq.getSortOrder() : 0)
+                            .build();
+                    project.addCodeFile(codeFile);
+                }
             }
         }
 

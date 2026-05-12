@@ -1,5 +1,6 @@
 package in.voltforge.api.project.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import in.voltforge.api.common.dto.ApiResponse;
 import in.voltforge.api.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @RestController
@@ -19,6 +21,7 @@ import java.util.*;
 public class ProjectExportController {
 
     private final ProjectService projectService;
+    private final ObjectMapper objectMapper;
 
     @GetMapping("/{projectId}/bom")
     @Operation(summary = "Generate Bill of Materials for a project")
@@ -85,6 +88,14 @@ public class ProjectExportController {
     public ResponseEntity<byte[]> exportZip(
             @PathVariable String projectId,
             @AuthenticationPrincipal Jwt jwt) throws Exception {
+        return exportProject(projectId, jwt);
+    }
+
+    @GetMapping("/{projectId}/export")
+    @Operation(summary = "Export project source and diagram as ZIP file")
+    public ResponseEntity<byte[]> exportProject(
+            @PathVariable String projectId,
+            @AuthenticationPrincipal Jwt jwt) throws Exception {
         var project = projectService.getProject(projectId, jwt != null ? jwt.getSubject() : null);
 
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -93,17 +104,28 @@ public class ProjectExportController {
             java.util.zip.ZipEntry readmeEntry = new java.util.zip.ZipEntry("README.md");
             zos.putNextEntry(readmeEntry);
             String readme = "# " + project.getName() + "\n\n" + (project.getDescription() != null ? project.getDescription() : "");
-            zos.write(readme.getBytes());
+            zos.write(readme.getBytes(StandardCharsets.UTF_8));
             zos.closeEntry();
 
             // Add Code Files
             if (project.getCodeFiles() != null) {
                 for (var file : project.getCodeFiles()) {
                     zos.putNextEntry(new java.util.zip.ZipEntry("src/" + file.getFilename()));
-                    zos.write(file.getContent() != null ? file.getContent().getBytes() : new byte[0]);
+                    zos.write(file.getContent() != null ? file.getContent().getBytes(StandardCharsets.UTF_8) : new byte[0]);
                     zos.closeEntry();
                 }
             }
+
+            Map<String, Object> diagram = new LinkedHashMap<>();
+            diagram.put("projectId", project.getId());
+            diagram.put("name", project.getName());
+            diagram.put("boardType", project.getBoardType());
+            diagram.put("canvasLayout", project.getCanvasLayout() != null ? project.getCanvasLayout() : Map.of("nodes", List.of(), "wires", List.of()));
+            diagram.put("componentConfig", project.getComponentConfig() != null ? project.getComponentConfig() : Map.of());
+
+            zos.putNextEntry(new java.util.zip.ZipEntry("diagram.json"));
+            zos.write(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(diagram));
+            zos.closeEntry();
         }
 
         byte[] zipBytes = baos.toByteArray();

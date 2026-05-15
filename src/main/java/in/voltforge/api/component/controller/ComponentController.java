@@ -2,11 +2,13 @@ package in.voltforge.api.component.controller;
 
 import in.voltforge.api.common.dto.ApiResponse;
 import in.voltforge.api.component.dto.ComponentResponse;
+import in.voltforge.api.component.dto.CustomComponentRequest;
 import in.voltforge.api.component.service.ComponentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -59,5 +61,18 @@ public class ComponentController {
     public ResponseEntity<ApiResponse<List<String>>> getCategories() {
         List<String> categories = componentService.getAllCategories();
         return ResponseEntity.ok(ApiResponse.success(categories));
+    }
+
+    @PostMapping("/custom")
+    @Operation(summary = "Create a custom SVG-backed component")
+    public ResponseEntity<ApiResponse<ComponentResponse>> createCustomComponent(@Valid @RequestBody CustomComponentRequest request) {
+        ComponentResponse component = componentService.createCustomComponent(request);
+        return ResponseEntity.ok(ApiResponse.success("Custom component created", component));
+    }
+
+    @GetMapping("/community")
+    @Operation(summary = "Get community-published custom components")
+    public ResponseEntity<ApiResponse<List<ComponentResponse>>> getCommunityComponents() {
+        return ResponseEntity.ok(ApiResponse.success(componentService.getCommunityComponents()));
     }
 }

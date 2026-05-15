@@ -134,4 +134,135 @@ public class ProjectExportController {
                 .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
                 .body(zipBytes);
     }
+
+    @GetMapping("/{projectId}/export/gerber")
+    @Operation(summary = "Export PCB manufacturing Gerber bundle")
+    public ResponseEntity<byte[]> exportGerber(
+            @PathVariable String projectId,
+            @AuthenticationPrincipal Jwt jwt) throws Exception {
+        var project = projectService.getProject(projectId, jwt != null ? jwt.getSubject() : null);
+        Map<String, Object> layout = project.getCanvasLayout() != null ? project.getCanvasLayout() : Map.of();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) layout.getOrDefault("nodes", List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> wires = (List<Map<String, Object>>) layout.getOrDefault("wires", List.of());
+
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+            writeZipEntry(zos, "README.txt", "VoltForge generated prototype Gerber set\nProject: " + project.getName() + "\n");
+            writeZipEntry(zos, "board-F_Cu.gbr", buildCopperGerber(nodes, wires, false));
+            writeZipEntry(zos, "board-B_Cu.gbr", buildCopperGerber(nodes, wires, true));
+            writeZipEntry(zos, "board-Edge_Cuts.gbr", buildEdgeCuts(nodes));
+            writeZipEntry(zos, "board.drl", buildExcellon(nodes));
+            writeZipEntry(zos, "manifest.json", objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(Map.of(
+                    "projectId", project.getId(),
+                    "format", "GERBER_RS274X_PROTOTYPE",
+                    "layers", List.of("F_Cu", "B_Cu", "Edge_Cuts", "Drill"),
+                    "traceCount", wires.size(),
+                    "componentCount", nodes.size()
+            )));
+        }
+
+        byte[] zipBytes = baos.toByteArray();
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + project.getName().replaceAll("[^a-zA-Z0-9.-]", "_") + "_gerber.zip\"")
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
+                .body(zipBytes);
+    }
+
+    private void writeZipEntry(java.util.zip.ZipOutputStream zos, String name, String content) throws java.io.IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(name));
+        zos.write(content.getBytes(StandardCharsets.UTF_8));
+        zos.closeEntry();
+    }
+
+    private String buildCopperGerber(List<Map<String, Object>> nodes, List<Map<String, Object>> wires, boolean bottomLayer) {
+        StringBuilder gerber = new StringBuilder();
+        gerber.append("G04 VoltForge ").append(bottomLayer ? "Bottom" : "Top").append(" Copper*\n");
+        gerber.append("%FSLAX24Y24*%\n%MOMM*%\n%ADD10C,0.450*%\nD10*\n");
+        for (int i = 0; i < wires.size(); i++) {
+            if ((i % 2 == 1) != bottomLayer) {
+                continue;
+            }
+            Map<String, Object> wire = wires.get(i);
+            Map<String, Object> start = pinPosition(nodes, String.valueOf(wire.get("fromNodeId")), String.valueOf(wire.get("fromPinId")));
+            Map<String, Object> end = pinPosition(nodes, String.valueOf(wire.get("toNodeId")), String.valueOf(wire.get("toPinId")));
+            if (start.isEmpty() || end.isEmpty()) {
+                continue;
+            }
+            gerber.append(coord(start, "D02")).append("\n");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> bends = (List<Map<String, Object>>) wire.getOrDefault("bendPoints", List.of());
+            for (Map<String, Object> bend : bends) {
+                gerber.append(coord(bend, "D01")).append("\n");
+            }
+            gerber.append(coord(end, "D01")).append("\n");
+        }
+        gerber.append("M02*\n");
+        return gerber.toString();
+    }
+
+    private String buildEdgeCuts(List<Map<String, Object>> nodes) {
+        double maxX = 100;
+        double maxY = 80;
+        for (Map<String, Object> node : nodes) {
+            maxX = Math.max(maxX, number(node.get("x")) + number(node.get("width")) + 20);
+            maxY = Math.max(maxY, number(node.get("y")) + number(node.get("height")) + 20);
+        }
+        return "G04 VoltForge Edge Cuts*\n%FSLAX24Y24*%\n%MOMM*%\n%ADD10C,0.150*%\nD10*\n"
+                + gerberCoord(0, 0, "D02") + "\n"
+                + gerberCoord(maxX / 10, 0, "D01") + "\n"
+                + gerberCoord(maxX / 10, maxY / 10, "D01") + "\n"
+                + gerberCoord(0, maxY / 10, "D01") + "\n"
+                + gerberCoord(0, 0, "D01") + "\nM02*\n";
+    }
+
+    private String buildExcellon(List<Map<String, Object>> nodes) {
+        StringBuilder drill = new StringBuilder("M48\nMETRIC,TZ\nT1C0.800\n%\nT1\n");
+        for (Map<String, Object> node : nodes) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> pins = (List<Map<String, Object>>) node.getOrDefault("pins", List.of());
+            for (Map<String, Object> pin : pins) {
+                double x = (number(node.get("x")) + number(pin.get("x"))) / 10;
+                double y = (number(node.get("y")) + number(pin.get("y"))) / 10;
+                drill.append("X").append(format(x)).append("Y").append(format(y)).append("\n");
+            }
+        }
+        drill.append("M30\n");
+        return drill.toString();
+    }
+
+    private Map<String, Object> pinPosition(List<Map<String, Object>> nodes, String nodeId, String pinId) {
+        for (Map<String, Object> node : nodes) {
+            if (!nodeId.equals(String.valueOf(node.get("id")))) continue;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> pins = (List<Map<String, Object>>) node.getOrDefault("pins", List.of());
+            for (Map<String, Object> pin : pins) {
+                if (pinId.equals(String.valueOf(pin.get("id")))) {
+                    return Map.of(
+                            "x", number(node.get("x")) + number(pin.get("x")),
+                            "y", number(node.get("y")) + number(pin.get("y"))
+                    );
+                }
+            }
+        }
+        return Map.of();
+    }
+
+    private String coord(Map<String, Object> point, String op) {
+        return gerberCoord(number(point.get("x")) / 10, number(point.get("y")) / 10, op);
+    }
+
+    private String gerberCoord(double x, double y, String op) {
+        return "X" + format(x) + "Y" + format(y) + op + "*";
+    }
+
+    private String format(double value) {
+        return String.format(Locale.ROOT, "%07.3f", value).replace(".", "");
+    }
+
+    private double number(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0;
+    }
 }

@@ -15,6 +15,8 @@ public interface ComponentRepository extends JpaRepository<ElectronicComponent, 
 
     List<ElectronicComponent> findByTypeOrderBySortOrderAsc(String type);
 
+    List<ElectronicComponent> findByTypeStartingWithOrderBySortOrderAsc(String typePrefix);
+
     List<ElectronicComponent> findByIsPremiumFalseOrderBySortOrderAsc();
 
     @Query("SELECT c FROM ElectronicComponent c WHERE " +

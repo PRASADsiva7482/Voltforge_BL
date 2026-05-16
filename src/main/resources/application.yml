@@ -9,7 +9,7 @@ server:
 
 spring:
   application:
-    name: voltforge-api
+    name: voltforge-app
 
   profiles:
     active: dev

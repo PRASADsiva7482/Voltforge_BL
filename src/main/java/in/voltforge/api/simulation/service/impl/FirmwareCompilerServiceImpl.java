@@ -63,23 +63,30 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
         return compileWithRemoteService(request, boardType, fqbn);
     }
 
-    private FirmwareCompileResponse compileWithRemoteService(FirmwareCompileRequest request, BoardType boardType, String fqbn) {
+    private FirmwareCompileResponse compileWithRemoteService(FirmwareCompileRequest request, BoardType boardType,
+            String fqbn) {
         try {
+            // Map BoardType to the short board name expected by Wokwi Hexi API
+            String wokwiBoard = switch (boardType) {
+                case ARDUINO_MEGA -> "mega";
+                case ARDUINO_NANO -> "nano";
+                default -> "uno";
+            };
+
             String responseBody = webClientBuilder.build()
                     .post()
                     .uri(remoteCompilerUrl)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(Map.of(
                             "sketch", request.getSource(),
-                            "fqbn", fqbn,
-                            "boardType", boardType.name()
-                    ))
+                            "board", wokwiBoard))
                     .retrieve()
                     .bodyToMono(String.class)
                     .timeout(Duration.ofSeconds(timeoutSeconds))
                     .block();
 
-            JsonNode root = responseBody == null ? objectMapper.createObjectNode() : objectMapper.readTree(responseBody);
+            JsonNode root = responseBody == null ? objectMapper.createObjectNode()
+                    : objectMapper.readTree(responseBody);
             String hex = textOrEmpty(root, "hex");
             String stdout = textOrEmpty(root, "stdout");
             String stderr = textOrEmpty(root, "stderr");
@@ -104,7 +111,8 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
         }
     }
 
-    private FirmwareCompileResponse compileWithArduinoCli(FirmwareCompileRequest request, BoardType boardType, String fqbn) {
+    private FirmwareCompileResponse compileWithArduinoCli(FirmwareCompileRequest request, BoardType boardType,
+            String fqbn) {
         Path workDir = null;
         try {
             String sketchName = sanitizeSketchName(request.getSketchName());
@@ -122,8 +130,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                     fqbn,
                     "--output-dir",
                     outputDir.toString(),
-                    sketchDir.toString()
-            );
+                    sketchDir.toString());
             Process process = processBuilder.start();
             CompletableFuture<String> stdoutFuture = readAsync(process.getInputStream());
             CompletableFuture<String> stderrFuture = readAsync(process.getErrorStream());
@@ -131,7 +138,8 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
-                return failed(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath, "Compiler timed out after " + timeoutSeconds + " seconds");
+                return failed(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath,
+                        "Compiler timed out after " + timeoutSeconds + " seconds");
             }
 
             String stdout = stdoutFuture.get(1, TimeUnit.SECONDS);
@@ -164,7 +172,8 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             case ARDUINO_UNO -> "arduino:avr:uno";
             case ARDUINO_NANO -> "arduino:avr:nano";
             case ARDUINO_MEGA -> "arduino:avr:mega";
-            case ESP32, ESP32_S3, ESP8266 -> throw new BadRequestException("AVR simulation currently supports Arduino Uno, Nano, and Mega boards");
+            case ESP32, ESP32_S3, ESP8266 ->
+                throw new BadRequestException("AVR simulation currently supports Arduino Uno, Nano, and Mega boards");
         };
     }
 
@@ -208,8 +217,8 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             String trimmed = line.trim();
             if (!trimmed.isBlank()
                     && (trimmed.toLowerCase(Locale.ROOT).contains("error")
-                    || trimmed.toLowerCase(Locale.ROOT).contains("warning")
-                    || trimmed.contains(".ino:"))) {
+                            || trimmed.toLowerCase(Locale.ROOT).contains("warning")
+                            || trimmed.contains(".ino:"))) {
                 diagnostics.add(trimmed);
             }
         }

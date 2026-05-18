@@ -50,7 +50,8 @@ public class WiringRuleEngine {
             "DISPLAY_LCD_I2C", "DISPLAY_OLED", "OLED_DISPLAY", "SENSOR_IMU"
     );
     private static final Set<String> MOTOR_TYPES = Set.of(
-            "MOTOR_DC", "MOTOR_SERVO", "SERVO_MOTOR", "MOTOR_STEPPER", "STEPPER_MOTOR"
+            "MOTOR_DC", "MOTOR_SERVO", "SERVO_MOTOR", "MOTOR_STEPPER", "STEPPER_MOTOR",
+            "ESC_MODULE", "MOTOR_BLDC"
     );
     private static final Set<String> PASSIVE_TYPES = Set.of("RESISTOR", "CAPACITOR", "POTENTIOMETER");
     private static final Set<String> RELAY_TYPES = Set.of("RELAY_SINGLE", "RELAY_SPDT", "RELAY_4CH");
@@ -117,7 +118,13 @@ public class WiringRuleEngine {
                 }
             } else if (MOTOR_TYPES.contains(compType)) {
                 wireMotor(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
-                nextDigitalPin = advanceDigitalPin(nextDigitalPin, compType.contains("STEPPER") ? 4 : 1);
+                if (compType.equals("ESC_MODULE")) {
+                    // Wire ESC phase outputs to any BLDC motors on the canvas
+                    wireEscToBldc(suggestions, usedConnections, compId, compPins, components);
+                    nextDigitalPin = advanceDigitalPin(nextDigitalPin, 1);
+                } else {
+                    nextDigitalPin = advanceDigitalPin(nextDigitalPin, compType.contains("STEPPER") ? 4 : 1);
+                }
             } else if (compType.equals("BUZZER")) {
                 wireBuzzer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextDigitalPin);
                 nextDigitalPin = advanceDigitalPin(nextDigitalPin, 1);
@@ -310,7 +317,21 @@ public class WiringRuleEngine {
                             String mcuId, List<Map<String, Object>> mcuPins,
                             String compId, String compType, List<Map<String, Object>> compPins,
                             Set<String> assigned, int nextPin) {
-        if (compType.contains("SERVO")) {
+        if (compType.equals("ESC_MODULE")) {
+            // ESC: MCU PWM pin → ESC Signal input
+            String sigPin = findPin(compPins, "sig", "signal");
+            if (sigPin != null) {
+                String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
+                if (mcuPin != null) {
+                    addSuggestion(suggestions, used, mcuId, mcuPin, compId, sigPin,
+                            COLOR_PWM, "ESC Signal → D" + nextPin);
+                    assigned.add(mcuPin);
+                }
+            }
+        } else if (compType.equals("MOTOR_BLDC")) {
+            // BLDC motors are wired from ESC, not directly from MCU — skip MCU wiring
+            // ESC→BLDC phase wiring is handled by wireEscToBldc()
+        } else if (compType.contains("SERVO")) {
             String sigPin = findPin(compPins, "sig", "signal", "pwm", "s");
             if (sigPin != null) {
                 String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
@@ -332,6 +353,35 @@ public class WiringRuleEngine {
                         nextPin++;
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Wire ESC phase output pins to the first available BLDC motor's phase input pins.
+     * Phase A→A, Phase B→B, Phase C→C.
+     */
+    private void wireEscToBldc(List<AiWireSuggestion> suggestions, Set<String> used,
+                                String escId, List<Map<String, Object>> escPins,
+                                List<Map<String, Object>> components) {
+        // Find the first BLDC motor on the canvas
+        Map<String, Object> bldc = components.stream()
+                .filter(c -> "MOTOR_BLDC".equals(str(c, "type")))
+                .findFirst().orElse(null);
+        if (bldc == null) return;
+
+        String bldcId = str(bldc, "id");
+        List<Map<String, Object>> bldcPins = getPins(bldc);
+
+        // Wire phase A, B, C
+        for (String phase : new String[]{"phase_a", "phase_b", "phase_c"}) {
+            String escPhase = findPin(escPins, phase);
+            String bldcPhase = findPin(bldcPins, phase);
+            if (escPhase != null && bldcPhase != null) {
+                String label = phase.replace("phase_", "").toUpperCase();
+                String color = label.equals("A") ? "#facc15" : label.equals("B") ? "#22c55e" : "#3b82f6";
+                addSuggestion(suggestions, used, escId, escPhase, bldcId, bldcPhase,
+                        color, "ESC Phase " + label + " → BLDC Phase " + label);
             }
         }
     }

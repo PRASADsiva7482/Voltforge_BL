@@ -22,11 +22,17 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
-      maximum-pool-size: 15
-      minimum-idle: 5
+      # ── Scaled for heavy collaborative load (hundreds of concurrent WS sessions) ──
+      maximum-pool-size: 100
+      minimum-idle: 20
       idle-timeout: 30000
       max-lifetime: 1800000
       connection-timeout: 20000
+      # Validate connections every 30 s to evict stale ones before they error
+      keepalive-time: 30000
+      # Alert on connections held > 60 s — catches slow WS canvas-save code paths
+      leak-detection-threshold: 60000
+      connection-test-query: SELECT 1
 
   # ── JPA / Hibernate ────────────────────────────────────────────────────────
   jpa:
@@ -39,10 +45,12 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
         jdbc:
-          batch_size: 25
+          batch_size: 50
         order_inserts: true
         order_updates: true
         generate_statistics: false
+        # Batch fetching to reduce N+1 queries on project/code-file joins
+        default_batch_fetch_size: 30
 
   # ── Flyway ─────────────────────────────────────────────────────────────────
   flyway:
@@ -74,10 +82,10 @@ spring:
 keycloak:
   enabled: true
   auth-server-url: ${KEYCLOAK_AUTH_SERVER_URL:https://copious-opposite-mangle.ngrok-free.dev}
-  realm: ${KEYCLOAK_REALM:myrealm}
-  resource: ${KEYCLOAK_CLIENT_ID:v-app}
+  realm: ${KEYCLOAK_REALM:voltforge-realm}
+  resource: ${KEYCLOAK_CLIENT_ID:VOLT-Canvas}
   credentials:
-    secret: ${KEYCLOAK_CLIENT_SECRET:ZyxAsnOjN1iYn89DVc8JxfAWgAsEqZr8}
+    secret: ${KEYCLOAK_CLIENT_SECRET:BpJfF6q1sdld27MOOXonOFC84GZlHyrC}
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app:

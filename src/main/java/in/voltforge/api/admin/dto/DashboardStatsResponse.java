@@ -18,6 +18,5 @@ public class DashboardStatsResponse {
     private long totalProjects;
     private long publicProjects;
     private long newProjectsToday;
-    private Map<String, Long> subscriptionBreakdown;
     private Map<String, Long> roleBreakdown;
 }

@@ -41,11 +41,4 @@ public class AdminController {
         DashboardStatsResponse stats = adminService.getDashboardStats();
         return ResponseEntity.ok(ApiResponse.success(stats));
     }
-
-    @GetMapping("/stats/subscriptions")
-    @Operation(summary = "Get subscription statistics")
-    public ResponseEntity<ApiResponse<DashboardStatsResponse>> getSubscriptionStats() {
-        DashboardStatsResponse stats = adminService.getDashboardStats();
-        return ResponseEntity.ok(ApiResponse.success(stats));
-    }
 }

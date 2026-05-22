@@ -2,7 +2,6 @@ package in.voltforge.api.auth.service.impl;
 
 import in.voltforge.api.auth.service.AuthService;
 import in.voltforge.api.common.enums.AccountStatus;
-import in.voltforge.api.common.enums.SubscriptionType;
 import in.voltforge.api.common.enums.UserRole;
 import in.voltforge.api.user.dto.UserResponse;
 import in.voltforge.api.user.entity.User;
@@ -55,7 +54,6 @@ public class AuthServiceImpl implements AuthService {
                     .email(email != null ? email : username + "@voltforge.in")
                     .displayName(displayName)
                     .role(determineRole(jwt))
-                    .subscriptionType(SubscriptionType.FREE)
                     .accountStatus(AccountStatus.ACTIVE)
                     .build();
             log.info("Created new user: {} ({})", username, keycloakId);

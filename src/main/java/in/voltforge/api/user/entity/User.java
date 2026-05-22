@@ -2,7 +2,6 @@ package in.voltforge.api.user.entity;
 
 import in.voltforge.api.common.entity.BaseEntity;
 import in.voltforge.api.common.enums.AccountStatus;
-import in.voltforge.api.common.enums.SubscriptionType;
 import in.voltforge.api.common.enums.UserRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -46,11 +45,6 @@ public class User extends BaseEntity {
     @Column(name = "role", nullable = false, length = 20)
     @Builder.Default
     private UserRole role = UserRole.USER;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "subscription_type", nullable = false, length = 20)
-    @Builder.Default
-    private SubscriptionType subscriptionType = SubscriptionType.FREE;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "account_status", nullable = false, length = 20)

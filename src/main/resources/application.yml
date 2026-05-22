@@ -75,8 +75,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/myrealm}
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/myrealm/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm/protocol/openid-connect/certs}
 
 # ── Keycloak Custom Properties ───────────────────────────────────────────────
 keycloak:

@@ -1,7 +1,6 @@
 package in.voltforge.api.user.repository;
 
 import in.voltforge.api.common.enums.AccountStatus;
-import in.voltforge.api.common.enums.SubscriptionType;
 import in.voltforge.api.common.enums.UserRole;
 import in.voltforge.api.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,8 +25,6 @@ public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByEmail(String email);
 
     long countByRole(UserRole role);
-
-    long countBySubscriptionType(SubscriptionType subscriptionType);
 
     long countByAccountStatus(AccountStatus accountStatus);
 

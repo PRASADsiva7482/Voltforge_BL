@@ -18,7 +18,6 @@ public class UserMapper {
                 .avatarUrl(user.getAvatarUrl())
                 .bio(user.getBio())
                 .role(user.getRole())
-                .subscriptionType(user.getSubscriptionType())
                 .accountStatus(user.getAccountStatus())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())

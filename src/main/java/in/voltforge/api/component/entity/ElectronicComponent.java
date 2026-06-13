@@ -49,6 +49,10 @@ public class ElectronicComponent extends BaseEntity {
     @Column(name = "svg_data", columnDefinition = "TEXT")
     private String svgData;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "electrical_specs", columnDefinition = "json")
+    private Map<String, Object> electricalSpecs;
+
     @Column(name = "is_premium", nullable = false)
     @Builder.Default
     private Boolean isPremium = false;

@@ -9,5 +9,6 @@ public enum ComponentCategory {
     MOTOR,
     PASSIVE,
     COMMUNICATION,
-    POWER
+    POWER,
+    INSTRUMENT
 }

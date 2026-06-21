@@ -106,7 +106,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             log.warn("Remote compiler returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             return failed(boardType, fqbn, "REMOTE:" + remoteCompilerUrl, e.getResponseBodyAsString());
         } catch (Exception e) {
-            log.warn("Remote firmware compilation failed: {}", e.getMessage(), e);
+            log.warn("Remote firmware compilation failed: {}", e.toString());
             return failed(boardType, fqbn, "REMOTE:" + remoteCompilerUrl, e.getMessage());
         }
     }
@@ -131,6 +131,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                     "--output-dir",
                     outputDir.toString(),
                     sketchDir.toString());
+            processBuilder.directory(workDir.toFile());
             Process process = processBuilder.start();
             CompletableFuture<String> stdoutFuture = readAsync(process.getInputStream());
             CompletableFuture<String> stderrFuture = readAsync(process.getErrorStream());
@@ -158,7 +159,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                     .metadata(Map.of("exitCode", process.exitValue(), "mode", "ARDUINO_CLI"))
                     .build();
         } catch (Exception e) {
-            log.warn("Local firmware compilation failed: {}", e.getMessage(), e);
+            log.warn("Local firmware compilation failed: {}", e.toString());
             return failed(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath, e.getMessage());
         } finally {
             if (workDir != null) {

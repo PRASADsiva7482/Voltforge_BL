@@ -54,7 +54,7 @@ public class WiringRuleEngine {
             "ESC_MODULE", "MOTOR_BLDC"
     );
     private static final Set<String> PASSIVE_TYPES = Set.of("RESISTOR", "CAPACITOR", "POTENTIOMETER");
-    private static final Set<String> RELAY_TYPES = Set.of("RELAY_SINGLE", "RELAY_SPDT", "RELAY_4CH");
+    private static final Set<String> RELAY_TYPES = Set.of("RELAY_SINGLE", "RELAY_SPDT", "RELAY_2CH", "RELAY_4CH");
 
     /**
      * Main entry: given a list of components on the canvas, generate wiring suggestions.
@@ -135,8 +135,8 @@ public class WiringRuleEngine {
                 wirePotentiometer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextAnalogPin);
                 nextAnalogPin++;
             } else if (RELAY_TYPES.contains(compType)) {
-                wireRelay(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextDigitalPin);
-                nextDigitalPin = advanceDigitalPin(nextDigitalPin, 1);
+                wireRelay(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
+                nextDigitalPin = advanceDigitalPin(nextDigitalPin, relayChannelCount(compType));
             }
         }
 
@@ -163,7 +163,7 @@ public class WiringRuleEngine {
         }
 
         // Connect GND pin
-        String gndPin = findPin(compPins, "gnd", "gnd1", "gnd2", "vss", "neg", "com");
+        String gndPin = findPin(compPins, "gnd", "gnd1", "gnd2", "vss", "neg", "coil2");
         if (gndPin != null) {
             String mcuGnd = findPin(mcuPins, "gnd1", "gnd2", "gnd");
             if (mcuGnd != null) {
@@ -341,7 +341,20 @@ public class WiringRuleEngine {
                     assigned.add(mcuPin);
                 }
             }
-        } else if (compType.contains("STEPPER")) {
+        } else if (compType.equals("MOTOR_STEPPER")) {
+            for (String pinName : new String[]{"in1", "in2", "in3", "in4"}) {
+                String pin = findPin(compPins, pinName);
+                if (pin != null) {
+                    String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
+                    if (mcuPin != null) {
+                        addSuggestion(suggestions, used, mcuId, mcuPin, compId, pin,
+                                COLOR_SIGNAL, "Stepper " + pinName.toUpperCase() + " â†’ D" + nextPin);
+                        assigned.add(mcuPin);
+                        nextPin++;
+                    }
+                }
+            }
+        } else if (compType.equals("STEPPER_MOTOR")) {
             for (String pinName : new String[]{"a1", "a2", "b1", "b2"}) {
                 String pin = findPin(compPins, pinName);
                 if (pin != null) {
@@ -461,14 +474,16 @@ public class WiringRuleEngine {
 
     private void wireRelay(List<AiWireSuggestion> suggestions, Set<String> used,
                             String mcuId, List<Map<String, Object>> mcuPins,
-                            String compId, List<Map<String, Object>> compPins,
+                            String compId, String compType, List<Map<String, Object>> compPins,
                             Set<String> assigned, int nextPin) {
-        String coilPin = findPin(compPins, "coil1", "in", "sig", "s");
-        if (coilPin != null) {
-            String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
+        for (String controlPinName : relayControlPins(compType)) {
+            String controlPin = findPin(compPins, controlPinName, "in", "sig", "s");
+            if (controlPin == null) continue;
+            int signalPinNumber = nextPin++;
+            String mcuPin = findDigitalPin(mcuPins, signalPinNumber, assigned);
             if (mcuPin != null) {
-                addSuggestion(suggestions, used, mcuId, mcuPin, compId, coilPin,
-                        COLOR_SIGNAL, "Relay IN → D" + nextPin);
+                addSuggestion(suggestions, used, mcuId, mcuPin, compId, controlPin,
+                        COLOR_SIGNAL, "Relay " + controlPinName.toUpperCase() + " -> D" + signalPinNumber);
                 assigned.add(mcuPin);
             }
         }
@@ -546,6 +561,19 @@ public class WiringRuleEngine {
     private int getSignalPinCount(String type) {
         if (type.contains("ULTRASONIC")) return 2; // TRIG + ECHO
         return 1;
+    }
+
+    private int relayChannelCount(String type) {
+        if ("RELAY_4CH".equals(type)) return 4;
+        if ("RELAY_2CH".equals(type)) return 2;
+        return 1;
+    }
+
+    private String[] relayControlPins(String type) {
+        if ("RELAY_4CH".equals(type)) return new String[]{"in1", "in2", "in3", "in4"};
+        if ("RELAY_2CH".equals(type)) return new String[]{"in1", "in2"};
+        if ("RELAY_SPDT".equals(type)) return new String[]{"coil1"};
+        return new String[]{"in"};
     }
 
     private int advanceDigitalPin(int current, int count) {

@@ -52,9 +52,11 @@ public class AiServiceImpl implements AiService {
                 When asked to design a circuit, respond with:
                 1. A brief description of the circuit
                 2. A JSON block with "components" (array of {id, type, name}) and "wires" (array of {from, to, color})
-                3. Arduino/ESP32 code for the circuit
+                3. Firmware or GPIO-oriented code for the selected board family
                 
-                Component types: ARDUINO_UNO, ARDUINO_MEGA, ARDUINO_NANO, ESP32, ESP32_S3, ESP8266,
+                Board component types include Arduino, ESP8266/ESP32, Raspberry Pi/Pico, STM32, Teensy,
+                micro:bit, XIAO, Feather/Thing Plus, Particle, Linux SBC, Jetson/Coral, and industrial MCU boards.
+                Other component types include:
                 LED_STANDARD, RESISTOR, CAPACITOR, MOTOR_DC, SERVO_MOTOR, BUZZER, PUSH_BUTTON,
                 POTENTIOMETER, LDR, TEMP_SENSOR, ULTRASONIC_SENSOR, LCD_16X2, OLED_128X64, RELAY_SPDT
                 
@@ -195,13 +197,13 @@ public class AiServiceImpl implements AiService {
         String boardType = request.getBoardType() != null ? request.getBoardType().name() : "ARDUINO_UNO";
 
         String systemPrompt = """
-                You are VoltForge AI, an expert Arduino/ESP32 programmer.
+                You are VoltForge AI, an expert embedded firmware and GPIO programmer.
                 Generate clean, well-commented %s code based on the user's request.
                 Always include proper pin definitions, setup(), and loop() functions.
                 Use Serial.begin(9600) for serial communication.
                 Add comments explaining each section of the code.
                 Respond with ONLY the code, no explanations outside the code block.
-                """.formatted(boardType.contains("ESP") ? "ESP32 (Arduino framework)" : "Arduino");
+                """.formatted(boardType.contains("ESP") ? "ESP32 (Arduino framework)" : boardType.replace("_", " "));
 
         String aiResponse = callOllama(systemPrompt, request.getPrompt());
         String code = extractCodeBlock(aiResponse);
@@ -222,7 +224,7 @@ public class AiServiceImpl implements AiService {
         log.info("AI chat requested: {}", request.getMessage());
 
         String systemPrompt = """
-                You are VoltForge AI Assistant, an expert in electronics, Arduino, ESP32, and circuit design.
+                You are VoltForge AI Assistant, an expert in electronics, microcontroller/SBC boards, and circuit design.
                 You help users build and debug their virtual electronics projects.
                 Be concise but thorough. When providing code, use markdown code blocks.
                 If the user provides context about their current project, use it to give specific advice.
@@ -381,7 +383,7 @@ public class AiServiceImpl implements AiService {
         log.info("AI code review requested for board: {}", request.getBoardType());
 
         String systemPrompt = """
-                You are VoltForge AI Code Reviewer. Analyze the Arduino/ESP32 code and respond with:
+                You are VoltForge AI Code Reviewer. Analyze the embedded firmware/GPIO code and respond with:
                 1. A brief summary of what the code does
                 2. A JSON block with format: {"score": 0-100, "issues": [{"severity":"ERROR|WARNING|INFO","line":1,"message":"...","fix":"..."}], "suggestions": ["..."]}
                 3. An improved version of the code in a code block
@@ -459,7 +461,7 @@ public class AiServiceImpl implements AiService {
         }
 
         String systemPrompt = """
-                You are VoltForge AI, an expert Arduino/ESP32 programmer.
+                You are VoltForge AI, an expert embedded firmware and GPIO programmer.
                 Generate complete, working code based on the circuit schematic provided.
                 Include proper pin definitions, setup(), and loop() functions.
                 Add helpful comments explaining each section.

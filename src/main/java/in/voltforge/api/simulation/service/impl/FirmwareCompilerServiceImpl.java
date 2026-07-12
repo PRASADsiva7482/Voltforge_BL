@@ -3,7 +3,6 @@ package in.voltforge.api.simulation.service.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.voltforge.api.common.enums.BoardType;
-import in.voltforge.api.common.exception.BadRequestException;
 import in.voltforge.api.simulation.dto.FirmwareCompileRequest;
 import in.voltforge.api.simulation.dto.FirmwareCompileResponse;
 import in.voltforge.api.simulation.service.FirmwareCompilerService;
@@ -22,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,6 +34,67 @@ import java.util.stream.Stream;
 @Service
 @RequiredArgsConstructor
 public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
+
+    private static final Map<BoardType, CompilerTarget> COMPILER_TARGETS = Map.ofEntries(
+            Map.entry(BoardType.ARDUINO_UNO, target("arduino:avr:uno", "uno")),
+            Map.entry(BoardType.ATMEL_AVR_ATMEGA328P, target("arduino:avr:uno", "uno")),
+            Map.entry(BoardType.ARDUINO_NANO, target("arduino:avr:nano", "nano")),
+            Map.entry(BoardType.ARDUINO_MEGA, target("arduino:avr:mega", "mega")),
+            Map.entry(BoardType.ARDUINO_LEONARDO, target("arduino:avr:leonardo")),
+            Map.entry(BoardType.ARDUINO_MICRO, target("arduino:avr:micro")),
+            Map.entry(BoardType.ARDUINO_NANO_EVERY, target("arduino:megaavr:nona4809")),
+            Map.entry(BoardType.ARDUINO_NANO_33_IOT, target("arduino:samd:nano_33_iot")),
+            Map.entry(BoardType.ARDUINO_DUE, target("arduino:sam:arduino_due_x_dbg")),
+            Map.entry(BoardType.ARDUINO_UNO_R4, target("arduino:renesas_uno:unor4wifi")),
+            Map.entry(BoardType.ARDUINO_GIGA_R1, target("arduino:mbed_giga:giga")),
+            Map.entry(BoardType.ARDUINO_PORTENTA_H7, target("arduino:mbed_portenta:envie_m7")),
+
+            Map.entry(BoardType.ESP8266, target("esp8266:esp8266:nodemcuv2", "esp8266")),
+            Map.entry(BoardType.ESP8266_WEMOS_D1_MINI, target("esp8266:esp8266:d1_mini", "esp8266")),
+            Map.entry(BoardType.ESP8266_ESP01, target("esp8266:esp8266:esp01", "esp8266")),
+            Map.entry(BoardType.ESP8266_ESP12E, target("esp8266:esp8266:generic", "esp8266")),
+
+            Map.entry(BoardType.ESP32, target("esp32:esp32:esp32", "esp32")),
+            Map.entry(BoardType.ESP32_WROOM, target("esp32:esp32:esp32", "esp32")),
+            Map.entry(BoardType.ESP32_WROVER, target("esp32:esp32:esp32wrover", "esp32")),
+            Map.entry(BoardType.ESP32_S2, target("esp32:esp32:esp32s2", "esp32-s2")),
+            Map.entry(BoardType.ESP32_S3, target("esp32:esp32:esp32s3", "esp32-s3")),
+            Map.entry(BoardType.ESP32_C3, target("esp32:esp32:esp32c3", "esp32-c3")),
+            Map.entry(BoardType.ESP32_C6, target("esp32:esp32:esp32c6", "esp32-c6")),
+            Map.entry(BoardType.ESP32_H2, target("esp32:esp32:esp32h2", "esp32-h2")),
+            Map.entry(BoardType.ESP32_TTGO, target("esp32:esp32:esp32", "esp32")),
+            Map.entry(BoardType.ESP32_LILYGO, target("esp32:esp32:esp32", "esp32")),
+            Map.entry(BoardType.ESP32_M5STACK, target("esp32:esp32:esp32", "esp32")),
+
+            Map.entry(BoardType.RASPBERRY_PI_PICO, target("rp2040:rp2040:rpipico", "pi-pico")),
+            Map.entry(BoardType.RASPBERRY_PI_PICO_W, target("rp2040:rp2040:rpipicow", "pi-pico-w")),
+            Map.entry(BoardType.RASPBERRY_PI_PICO_2, target("rp2040:rp2040:rpipico2")),
+
+            Map.entry(BoardType.STM32_BLUE_PILL, target("STMicroelectronics:stm32:GenF1:pnum=BLUEPILL_F103C8")),
+            Map.entry(BoardType.STM32_BLACK_PILL, target("STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F411CE")),
+
+            Map.entry(BoardType.TEENSY_4_0, target("teensy:avr:teensy40")),
+            Map.entry(BoardType.TEENSY_4_1, target("teensy:avr:teensy41")),
+            Map.entry(BoardType.TEENSY_LC, target("teensy:avr:teensyLC")),
+
+            Map.entry(BoardType.SEEED_XIAO_SAMD21, target("Seeeduino:samd:seeed_XIAO_m0")),
+            Map.entry(BoardType.SEEED_XIAO_RP2040, target("rp2040:rp2040:seeed_xiao_rp2040")),
+            Map.entry(BoardType.SEEED_XIAO_ESP32C3, target("esp32:esp32:XIAO_ESP32C3", "esp32-c3")),
+            Map.entry(BoardType.SEEED_XIAO_ESP32S3, target("esp32:esp32:XIAO_ESP32S3", "esp32-s3")),
+
+            Map.entry(BoardType.ADAFRUIT_FEATHER_M0, target("adafruit:samd:adafruit_feather_m0")),
+            Map.entry(BoardType.ADAFRUIT_FEATHER_M4, target("adafruit:samd:adafruit_feather_m4")),
+            Map.entry(BoardType.ADAFRUIT_FEATHER_ESP32, target("esp32:esp32:featheresp32", "esp32")),
+            Map.entry(BoardType.ADAFRUIT_FEATHER_RP2040, target("rp2040:rp2040:adafruit_feather")),
+            Map.entry(BoardType.ADAFRUIT_FEATHER_NRF52840, target("adafruit:nrf52:feather52840")),
+
+            Map.entry(BoardType.SPARKFUN_THING_PLUS_ESP32, target("esp32:esp32:esp32", "esp32")),
+            Map.entry(BoardType.SPARKFUN_THING_PLUS_RP2040, target("rp2040:rp2040:rpipico")),
+            Map.entry(BoardType.SPARKFUN_THING_PLUS_ARTEMIS, target("SparkFun:apollo3:sfe_artemis_thing_plus")),
+
+            Map.entry(BoardType.SEEED_XIAO_NRF52840, target("Seeeduino:nrf52:xiaonRF52840")),
+
+            Map.entry(BoardType.ATMEL_AVR_ATTINY, target("ATTinyCore:avr:attinyx5")));
 
     private final ObjectMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
@@ -53,33 +114,35 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
     @Override
     public FirmwareCompileResponse compile(FirmwareCompileRequest request) {
         BoardType boardType = request.getBoardType() != null ? request.getBoardType() : BoardType.ARDUINO_UNO;
-        String fqbn = fqbnFor(boardType);
+        CompilerTarget target = COMPILER_TARGETS.get(boardType);
+        String fqbn = target == null ? "unsupported:" + boardType.name() : target.fqbn();
         String mode = compilerMode == null ? "REMOTE" : compilerMode.trim().toUpperCase(Locale.ROOT);
 
         if ("ARDUINO_CLI".equals(mode) || "LOCAL".equals(mode)) {
-            return compileWithArduinoCli(request, boardType, fqbn);
+            if (target == null) {
+                return unsupported(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath,
+                        unsupportedMessage(boardType, "local Arduino CLI"));
+            }
+            return compileWithArduinoCli(request, boardType, target);
         }
 
-        return compileWithRemoteService(request, boardType, fqbn);
+        if (target == null || target.remoteBoard() == null) {
+            return unsupported(boardType, fqbn, "REMOTE:" + remoteCompilerUrl,
+                    unsupportedMessage(boardType, "remote compiler"));
+        }
+        return compileWithRemoteService(request, boardType, target);
     }
 
     private FirmwareCompileResponse compileWithRemoteService(FirmwareCompileRequest request, BoardType boardType,
-            String fqbn) {
+            CompilerTarget target) {
         try {
-            // Map BoardType to the short board name expected by Wokwi Hexi API
-            String wokwiBoard = switch (boardType) {
-                case ARDUINO_MEGA -> "mega";
-                case ARDUINO_NANO -> "nano";
-                default -> "uno";
-            };
-
             String responseBody = webClientBuilder.build()
                     .post()
                     .uri(remoteCompilerUrl)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(Map.of(
                             "sketch", request.getSource(),
-                            "board", wokwiBoard))
+                            "board", target.remoteBoard()))
                     .retrieve()
                     .bodyToMono(String.class)
                     .timeout(Duration.ofSeconds(timeoutSeconds))
@@ -94,29 +157,29 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             return FirmwareCompileResponse.builder()
                     .success(!hex.isBlank())
                     .boardType(boardType.name())
-                    .fqbn(fqbn)
+                    .fqbn(target.fqbn())
                     .compiler("REMOTE:" + remoteCompilerUrl)
                     .hex(hex)
                     .stdout(stdout)
                     .stderr(stderr)
                     .diagnostics(toDiagnostics(stdout, stderr))
-                    .metadata(Map.of("mode", "REMOTE"))
+                    .metadata(Map.of("mode", "REMOTE", "remoteBoard", target.remoteBoard()))
                     .build();
         } catch (WebClientResponseException e) {
             log.warn("Remote compiler returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return failed(boardType, fqbn, "REMOTE:" + remoteCompilerUrl, e.getResponseBodyAsString());
+            return failed(boardType, target.fqbn(), "REMOTE:" + remoteCompilerUrl, e.getResponseBodyAsString());
         } catch (Exception e) {
             log.warn("Remote firmware compilation failed: {}", e.toString());
-            return failed(boardType, fqbn, "REMOTE:" + remoteCompilerUrl, e.getMessage());
+            return failed(boardType, target.fqbn(), "REMOTE:" + remoteCompilerUrl, e.getMessage());
         }
     }
 
     private FirmwareCompileResponse compileWithArduinoCli(FirmwareCompileRequest request, BoardType boardType,
-            String fqbn) {
+            CompilerTarget target) {
         Path workDir = null;
         try {
             String sketchName = sanitizeSketchName(request.getSketchName());
-            workDir = Files.createTempDirectory("voltforge-avr-" + UUID.randomUUID());
+            workDir = Files.createTempDirectory("voltforge-fw-" + UUID.randomUUID());
             Path sketchDir = workDir.resolve(sketchName);
             Path outputDir = workDir.resolve("build");
             Files.createDirectories(sketchDir);
@@ -127,7 +190,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                     arduinoCliPath,
                     "compile",
                     "--fqbn",
-                    fqbn,
+                    target.fqbn(),
                     "--output-dir",
                     outputDir.toString(),
                     sketchDir.toString());
@@ -139,28 +202,29 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
-                return failed(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath,
+                return failed(boardType, target.fqbn(), "ARDUINO_CLI:" + arduinoCliPath,
                         "Compiler timed out after " + timeoutSeconds + " seconds");
             }
 
             String stdout = stdoutFuture.get(1, TimeUnit.SECONDS);
             String stderr = stderrFuture.get(1, TimeUnit.SECONDS);
-            String hex = process.exitValue() == 0 ? findHex(outputDir) : "";
+            CompiledArtifact artifact = process.exitValue() == 0 ? findCompiledArtifact(outputDir) : null;
+            String hex = artifact == null ? "" : artifact.hex();
 
             return FirmwareCompileResponse.builder()
-                    .success(process.exitValue() == 0 && !hex.isBlank())
+                    .success(process.exitValue() == 0 && artifact != null)
                     .boardType(boardType.name())
-                    .fqbn(fqbn)
+                    .fqbn(target.fqbn())
                     .compiler("ARDUINO_CLI:" + arduinoCliPath)
                     .hex(hex)
                     .stdout(stdout)
                     .stderr(stderr)
                     .diagnostics(toDiagnostics(stdout, stderr))
-                    .metadata(Map.of("exitCode", process.exitValue(), "mode", "ARDUINO_CLI"))
+                    .metadata(artifactMetadata(process.exitValue(), artifact))
                     .build();
         } catch (Exception e) {
             log.warn("Local firmware compilation failed: {}", e.toString());
-            return failed(boardType, fqbn, "ARDUINO_CLI:" + arduinoCliPath, e.getMessage());
+            return failed(boardType, target.fqbn(), "ARDUINO_CLI:" + arduinoCliPath, e.getMessage());
         } finally {
             if (workDir != null) {
                 deleteQuietly(workDir);
@@ -168,24 +232,36 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
         }
     }
 
-    private String fqbnFor(BoardType boardType) {
-        return switch (boardType) {
-            case ARDUINO_UNO -> "arduino:avr:uno";
-            case ARDUINO_NANO -> "arduino:avr:nano";
-            case ARDUINO_MEGA -> "arduino:avr:mega";
-            case ESP32, ESP32_S3, ESP8266 ->
-                throw new BadRequestException("AVR simulation currently supports Arduino Uno, Nano, and Mega boards");
-        };
-    }
-
-    private String findHex(Path outputDir) throws IOException {
+    private CompiledArtifact findCompiledArtifact(Path outputDir) throws IOException {
         try (Stream<Path> files = Files.walk(outputDir)) {
-            Path hexFile = files
-                    .filter(path -> path.getFileName().toString().endsWith(".hex"))
+            Path artifact = files
+                    .filter(Files::isRegularFile)
+                    .filter(path -> isFirmwareArtifact(path.getFileName().toString()))
+                    .sorted(Comparator.comparingInt(path -> artifactPriority(path.getFileName().toString())))
                     .findFirst()
                     .orElse(null);
-            return hexFile == null ? "" : Files.readString(hexFile, StandardCharsets.UTF_8);
+            if (artifact == null) {
+                return null;
+            }
+            String fileName = artifact.getFileName().toString();
+            String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+            String hex = "hex".equals(extension) ? Files.readString(artifact, StandardCharsets.UTF_8) : "";
+            return new CompiledArtifact(hex, extension, Files.size(artifact));
         }
+    }
+
+    private boolean isFirmwareArtifact(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".hex") || lower.endsWith(".bin") || lower.endsWith(".uf2") || lower.endsWith(".elf");
+    }
+
+    private int artifactPriority(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".hex")) return 0;
+        if (lower.endsWith(".bin")) return 1;
+        if (lower.endsWith(".uf2")) return 2;
+        if (lower.endsWith(".elf")) return 3;
+        return 4;
     }
 
     private CompletableFuture<String> readAsync(java.io.InputStream stream) {
@@ -237,6 +313,75 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                 .diagnostics(error == null ? List.of("Compilation failed") : List.of(error))
                 .metadata(Map.of("mode", compiler))
                 .build();
+    }
+
+    private FirmwareCompileResponse unsupported(BoardType boardType, String fqbn, String compiler, String message) {
+        return FirmwareCompileResponse.builder()
+                .success(false)
+                .boardType(boardType.name())
+                .fqbn(fqbn)
+                .compiler(compiler)
+                .hex("")
+                .stdout("")
+                .stderr(message)
+                .diagnostics(List.of(message))
+                .metadata(Map.of("mode", compiler, "unsupported", true))
+                .build();
+    }
+
+    private String unsupportedMessage(BoardType boardType, String compilerLabel) {
+        if (isLinuxBoard(boardType)) {
+            return boardType.name()
+                    + " is a Linux SBC target. VoltForge supports it on the canvas and GPIO planner, "
+                    + "but firmware compilation for Linux applications must run in that board's native toolchain.";
+        }
+        if (COMPILER_TARGETS.containsKey(boardType)) {
+            return boardType.name()
+                    + " has a local Arduino CLI FQBN, but it is not available through the configured "
+                    + compilerLabel
+                    + ". Switch app.simulation.compiler.mode to LOCAL/ARDUINO_CLI and install the matching board core.";
+        }
+        return boardType.name()
+                + " is available as a canvas/GPIO component, but no safe firmware compiler target is configured for "
+                + compilerLabel
+                + ". Add an explicit FQBN mapping before enabling compilation for this board.";
+    }
+
+    private boolean isLinuxBoard(BoardType boardType) {
+        String name = boardType.name();
+        return name.startsWith("RASPBERRY_PI_") && !name.startsWith("RASPBERRY_PI_PICO")
+                || name.startsWith("BEAGLEBONE")
+                || name.startsWith("ODROID")
+                || name.startsWith("ORANGE_PI")
+                || name.startsWith("JETSON")
+                || name.startsWith("CORAL")
+                || name.equals("RISC_V_VISIONFIVE")
+                || name.equals("RENESAS_RZ");
+    }
+
+    private Map<String, Object> artifactMetadata(int exitCode, CompiledArtifact artifact) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("exitCode", exitCode);
+        metadata.put("mode", "ARDUINO_CLI");
+        if (artifact != null) {
+            metadata.put("artifactExtension", artifact.extension());
+            metadata.put("artifactSizeBytes", artifact.sizeBytes());
+        }
+        return metadata;
+    }
+
+    private static CompilerTarget target(String fqbn) {
+        return new CompilerTarget(fqbn, null);
+    }
+
+    private static CompilerTarget target(String fqbn, String remoteBoard) {
+        return new CompilerTarget(fqbn, remoteBoard);
+    }
+
+    private record CompilerTarget(String fqbn, String remoteBoard) {
+    }
+
+    private record CompiledArtifact(String hex, String extension, long sizeBytes) {
     }
 
     private String sanitizeSketchName(String sketchName) {

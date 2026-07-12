@@ -23,7 +23,7 @@ public class SimulationController {
     private final FirmwareCompilerService firmwareCompilerService;
 
     @PostMapping("/compile")
-    @Operation(summary = "Compile Arduino firmware to Intel HEX for AVR emulation")
+    @Operation(summary = "Compile firmware for supported board targets")
     public ResponseEntity<ApiResponse<FirmwareCompileResponse>> compileFirmware(
             @Valid @RequestBody FirmwareCompileRequest request) {
         FirmwareCompileResponse response = firmwareCompilerService.compile(request);

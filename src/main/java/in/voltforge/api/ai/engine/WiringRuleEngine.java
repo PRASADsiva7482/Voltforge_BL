@@ -26,40 +26,41 @@ import java.util.stream.Collectors;
 public class WiringRuleEngine {
 
     // ── Color conventions ──
-    private static final String COLOR_POWER   = "#ef4444"; // Red
-    private static final String COLOR_GROUND  = "#555555"; // Dark gray
-    private static final String COLOR_SIGNAL  = "#3b82f6"; // Blue
-    private static final String COLOR_DATA    = "#22c55e"; // Green
-    private static final String COLOR_PWM     = "#f59e0b"; // Amber
-    private static final String COLOR_I2C     = "#a855f7"; // Purple
-    private static final String COLOR_SERIAL  = "#06b6d4"; // Cyan
+    private static final String COLOR_POWER = "#ef4444"; // Red
+    private static final String COLOR_GROUND = "#555555"; // Dark gray
+    private static final String COLOR_SIGNAL = "#3b82f6"; // Blue
+    private static final String COLOR_DATA = "#22c55e"; // Green
+    private static final String COLOR_PWM = "#f59e0b"; // Amber
+    private static final String COLOR_I2C = "#a855f7"; // Purple
+    private static final String COLOR_SERIAL = "#06b6d4"; // Cyan
 
     // ── Component categories ──
-    private static final Set<String> MCU_TYPES = Set.of(
-            "ARDUINO_UNO", "ARDUINO_MEGA", "ARDUINO_NANO", "ESP32", "ESP32_S3", "ESP8266"
-    );
+    private static final Set<String> MCU_PREFIXES = Set.of(
+            "ARDUINO", "ESP8266", "ESP32", "RASPBERRY_PI", "STM32", "TEENSY", "BBC_MICROBIT",
+            "SEEED_XIAO", "ADAFRUIT_FEATHER", "SPARKFUN_THING_PLUS", "PARTICLE", "BEAGLEBONE",
+            "ODROID", "ORANGE_PI", "BANANA_PI", "NANOPI", "JETSON", "CORAL", "INTEL", "TI_",
+            "NXP", "MICROCHIP", "ATMEL_AVR", "NORDIC", "SILICON_LABS", "INFINEON", "RENESAS",
+            "CH32", "RISC_V");
     private static final Set<String> LED_TYPES = Set.of("LED_STANDARD", "LED_RGB", "LED_NEOPIXEL");
     private static final Set<String> SENSOR_TYPES = Set.of(
             "SENSOR_DHT11", "SENSOR_DHT22", "TEMP_SENSOR", "SENSOR_ULTRASONIC", "ULTRASONIC_SENSOR",
-            "SENSOR_PIR", "PIR_SENSOR", "SENSOR_LDR", "LDR", "SENSOR_IMU", "SOIL_MOISTURE", "IR_RECEIVER"
-    );
+            "SENSOR_PIR", "PIR_SENSOR", "SENSOR_LDR", "LDR", "SENSOR_IMU", "SOIL_MOISTURE", "IR_RECEIVER");
     private static final Set<String> DISPLAY_TYPES = Set.of(
-            "DISPLAY_LCD_I2C", "LCD_16X2", "DISPLAY_OLED", "OLED_DISPLAY", "DISPLAY_7SEG"
-    );
+            "DISPLAY_LCD_I2C", "LCD_16X2", "DISPLAY_OLED", "OLED_DISPLAY", "DISPLAY_7SEG");
     private static final Set<String> I2C_TYPES = Set.of(
-            "DISPLAY_LCD_I2C", "DISPLAY_OLED", "OLED_DISPLAY", "SENSOR_IMU"
-    );
+            "DISPLAY_LCD_I2C", "DISPLAY_OLED", "OLED_DISPLAY", "SENSOR_IMU");
     private static final Set<String> MOTOR_TYPES = Set.of(
             "MOTOR_DC", "MOTOR_SERVO", "SERVO_MOTOR", "MOTOR_STEPPER", "STEPPER_MOTOR",
-            "ESC_MODULE", "MOTOR_BLDC"
-    );
+            "ESC_MODULE", "MOTOR_BLDC");
     private static final Set<String> PASSIVE_TYPES = Set.of("RESISTOR", "CAPACITOR", "POTENTIOMETER");
     private static final Set<String> RELAY_TYPES = Set.of("RELAY_SINGLE", "RELAY_SPDT", "RELAY_2CH", "RELAY_4CH");
 
     /**
-     * Main entry: given a list of components on the canvas, generate wiring suggestions.
+     * Main entry: given a list of components on the canvas, generate wiring
+     * suggestions.
      *
-     * @param components List of maps with keys: id, type, name, pins (list of pin maps)
+     * @param components List of maps with keys: id, type, name, pins (list of pin
+     *                   maps)
      * @param boardType  The MCU board type (e.g., "ARDUINO_UNO")
      * @return list of wire suggestions
      */
@@ -87,37 +88,43 @@ public class WiringRuleEngine {
         // Track which MCU pins are assigned
         Set<String> assignedMcuPins = new HashSet<>();
         int nextDigitalPin = 2; // Start from D2 (D0/D1 reserved for Serial)
-        int nextAnalogPin = 0;  // Start from A0
+        int nextAnalogPin = 0; // Start from A0
 
         // Process each non-MCU component
         for (Map<String, Object> comp : components) {
             String compId = str(comp, "id");
             String compType = str(comp, "type");
-            if (MCU_TYPES.contains(compType) || compId.equals(mcuId)) continue;
+            if (isMcuType(compType) || compId.equals(mcuId))
+                continue;
 
             List<Map<String, Object>> compPins = getPins(comp);
 
             // ── Power + Ground connections ──
-            wirePowerAndGround(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins);
+            wirePowerAndGround(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins,
+                    assignedMcuPins);
 
             // ── Signal connections by component type ──
             if (LED_TYPES.contains(compType)) {
-                wireLed(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
+                wireLed(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins,
+                        nextDigitalPin);
                 nextDigitalPin = advanceDigitalPin(nextDigitalPin, compType.equals("LED_RGB") ? 3 : 1);
             } else if (SENSOR_TYPES.contains(compType)) {
-                wireSensor(suggestions, usedConnections, mcuId, mcuType, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin, nextAnalogPin);
+                wireSensor(suggestions, usedConnections, mcuId, mcuType, mcuPins, compId, compType, compPins,
+                        assignedMcuPins, nextDigitalPin, nextAnalogPin);
                 if (isAnalogSensor(compType)) {
                     nextAnalogPin++;
                 } else {
                     nextDigitalPin = advanceDigitalPin(nextDigitalPin, getSignalPinCount(compType));
                 }
             } else if (DISPLAY_TYPES.contains(compType)) {
-                wireDisplay(suggestions, usedConnections, mcuId, mcuType, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
+                wireDisplay(suggestions, usedConnections, mcuId, mcuType, mcuPins, compId, compType, compPins,
+                        assignedMcuPins, nextDigitalPin);
                 if (!I2C_TYPES.contains(compType)) {
                     nextDigitalPin = advanceDigitalPin(nextDigitalPin, 6); // RS, E, D4-D7
                 }
             } else if (MOTOR_TYPES.contains(compType)) {
-                wireMotor(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
+                wireMotor(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins,
+                        nextDigitalPin);
                 if (compType.equals("ESC_MODULE")) {
                     // Wire ESC phase outputs to any BLDC motors on the canvas
                     wireEscToBldc(suggestions, usedConnections, compId, compPins, components);
@@ -126,16 +133,20 @@ public class WiringRuleEngine {
                     nextDigitalPin = advanceDigitalPin(nextDigitalPin, compType.contains("STEPPER") ? 4 : 1);
                 }
             } else if (compType.equals("BUZZER")) {
-                wireBuzzer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextDigitalPin);
+                wireBuzzer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins,
+                        nextDigitalPin);
                 nextDigitalPin = advanceDigitalPin(nextDigitalPin, 1);
             } else if (compType.equals("BUTTON") || compType.equals("PUSH_BUTTON")) {
-                wireButton(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextDigitalPin);
+                wireButton(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins,
+                        nextDigitalPin);
                 nextDigitalPin = advanceDigitalPin(nextDigitalPin, 1);
             } else if (compType.equals("POTENTIOMETER")) {
-                wirePotentiometer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins, nextAnalogPin);
+                wirePotentiometer(suggestions, usedConnections, mcuId, mcuPins, compId, compPins, assignedMcuPins,
+                        nextAnalogPin);
                 nextAnalogPin++;
             } else if (RELAY_TYPES.contains(compType)) {
-                wireRelay(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins, nextDigitalPin);
+                wireRelay(suggestions, usedConnections, mcuId, mcuPins, compId, compType, compPins, assignedMcuPins,
+                        nextDigitalPin);
                 nextDigitalPin = advanceDigitalPin(nextDigitalPin, relayChannelCount(compType));
             }
         }
@@ -145,13 +156,13 @@ public class WiringRuleEngine {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  WIRING RULES BY COMPONENT TYPE
+    // WIRING RULES BY COMPONENT TYPE
     // ══════════════════════════════════════════════════════════════════════
 
     private void wirePowerAndGround(List<AiWireSuggestion> suggestions, Set<String> used,
-                                     String mcuId, List<Map<String, Object>> mcuPins,
-                                     String compId, String compType, List<Map<String, Object>> compPins,
-                                     Set<String> assigned) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned) {
         // Connect VCC pin
         String vccPin = findPin(compPins, "vcc", "vdd", "v+", "3v3", "vin");
         if (vccPin != null) {
@@ -174,12 +185,12 @@ public class WiringRuleEngine {
     }
 
     private void wireLed(List<AiWireSuggestion> suggestions, Set<String> used,
-                          String mcuId, List<Map<String, Object>> mcuPins,
-                          String compId, String compType, List<Map<String, Object>> compPins,
-                          Set<String> assigned, int nextPin) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         if (compType.equals("LED_RGB")) {
             // RGB LED: 3 signal pins
-            for (String colorPin : new String[]{"r", "g", "b"}) {
+            for (String colorPin : new String[] { "r", "g", "b" }) {
                 String pin = findPin(compPins, colorPin);
                 if (pin != null) {
                     String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
@@ -206,9 +217,9 @@ public class WiringRuleEngine {
     }
 
     private void wireSensor(List<AiWireSuggestion> suggestions, Set<String> used,
-                             String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
-                             String compId, String compType, List<Map<String, Object>> compPins,
-                             Set<String> assigned, int nextDigital, int nextAnalog) {
+            String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextDigital, int nextAnalog) {
         if (isAnalogSensor(compType)) {
             // Analog sensors (LDR, soil moisture) → analog pin
             String sigPin = findPin(compPins, "sig", "out", "data", "p1", "p2");
@@ -279,9 +290,9 @@ public class WiringRuleEngine {
     }
 
     private void wireDisplay(List<AiWireSuggestion> suggestions, Set<String> used,
-                              String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
-                              String compId, String compType, List<Map<String, Object>> compPins,
-                              Set<String> assigned, int nextPin) {
+            String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         if (I2C_TYPES.contains(compType)) {
             wireI2C(suggestions, used, mcuId, mcuType, mcuPins, compId, compPins, assigned);
         }
@@ -289,8 +300,8 @@ public class WiringRuleEngine {
     }
 
     private void wireI2C(List<AiWireSuggestion> suggestions, Set<String> used,
-                          String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
-                          String compId, List<Map<String, Object>> compPins, Set<String> assigned) {
+            String mcuId, String mcuType, List<Map<String, Object>> mcuPins,
+            String compId, List<Map<String, Object>> compPins, Set<String> assigned) {
         String sdaPin = findPin(compPins, "sda", "dat");
         String sclPin = findPin(compPins, "scl", "clk");
         // MCU I2C pins
@@ -314,9 +325,9 @@ public class WiringRuleEngine {
     }
 
     private void wireMotor(List<AiWireSuggestion> suggestions, Set<String> used,
-                            String mcuId, List<Map<String, Object>> mcuPins,
-                            String compId, String compType, List<Map<String, Object>> compPins,
-                            Set<String> assigned, int nextPin) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         if (compType.equals("ESC_MODULE")) {
             // ESC: MCU PWM pin → ESC Signal input
             String sigPin = findPin(compPins, "sig", "signal");
@@ -342,7 +353,7 @@ public class WiringRuleEngine {
                 }
             }
         } else if (compType.equals("MOTOR_STEPPER")) {
-            for (String pinName : new String[]{"in1", "in2", "in3", "in4"}) {
+            for (String pinName : new String[] { "in1", "in2", "in3", "in4" }) {
                 String pin = findPin(compPins, pinName);
                 if (pin != null) {
                     String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
@@ -355,7 +366,7 @@ public class WiringRuleEngine {
                 }
             }
         } else if (compType.equals("STEPPER_MOTOR")) {
-            for (String pinName : new String[]{"a1", "a2", "b1", "b2"}) {
+            for (String pinName : new String[] { "a1", "a2", "b1", "b2" }) {
                 String pin = findPin(compPins, pinName);
                 if (pin != null) {
                     String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
@@ -371,23 +382,25 @@ public class WiringRuleEngine {
     }
 
     /**
-     * Wire ESC phase output pins to the first available BLDC motor's phase input pins.
+     * Wire ESC phase output pins to the first available BLDC motor's phase input
+     * pins.
      * Phase A→A, Phase B→B, Phase C→C.
      */
     private void wireEscToBldc(List<AiWireSuggestion> suggestions, Set<String> used,
-                                String escId, List<Map<String, Object>> escPins,
-                                List<Map<String, Object>> components) {
+            String escId, List<Map<String, Object>> escPins,
+            List<Map<String, Object>> components) {
         // Find the first BLDC motor on the canvas
         Map<String, Object> bldc = components.stream()
                 .filter(c -> "MOTOR_BLDC".equals(str(c, "type")))
                 .findFirst().orElse(null);
-        if (bldc == null) return;
+        if (bldc == null)
+            return;
 
         String bldcId = str(bldc, "id");
         List<Map<String, Object>> bldcPins = getPins(bldc);
 
         // Wire phase A, B, C
-        for (String phase : new String[]{"phase_a", "phase_b", "phase_c"}) {
+        for (String phase : new String[] { "phase_a", "phase_b", "phase_c" }) {
             String escPhase = findPin(escPins, phase);
             String bldcPhase = findPin(bldcPins, phase);
             if (escPhase != null && bldcPhase != null) {
@@ -400,9 +413,9 @@ public class WiringRuleEngine {
     }
 
     private void wireBuzzer(List<AiWireSuggestion> suggestions, Set<String> used,
-                             String mcuId, List<Map<String, Object>> mcuPins,
-                             String compId, List<Map<String, Object>> compPins,
-                             Set<String> assigned, int nextPin) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         String posPin = findPin(compPins, "pos", "+", "sig", "s");
         if (posPin != null) {
             String mcuPin = findDigitalPin(mcuPins, nextPin, assigned);
@@ -415,9 +428,9 @@ public class WiringRuleEngine {
     }
 
     private void wireButton(List<AiWireSuggestion> suggestions, Set<String> used,
-                              String mcuId, List<Map<String, Object>> mcuPins,
-                              String compId, List<Map<String, Object>> compPins,
-                              Set<String> assigned, int nextPin) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         // Button: one side to MCU digital pin, other side to GND (INPUT_PULLUP)
         String pin1 = findPin(compPins, "p1a", "p1", "1a", "a");
         if (pin1 != null) {
@@ -440,9 +453,9 @@ public class WiringRuleEngine {
     }
 
     private void wirePotentiometer(List<AiWireSuggestion> suggestions, Set<String> used,
-                                    String mcuId, List<Map<String, Object>> mcuPins,
-                                    String compId, List<Map<String, Object>> compPins,
-                                    Set<String> assigned, int nextAnalog) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextAnalog) {
         // Wiper to analog pin
         String wiperPin = findPin(compPins, "wiper", "w", "out");
         if (wiperPin != null) {
@@ -473,12 +486,13 @@ public class WiringRuleEngine {
     }
 
     private void wireRelay(List<AiWireSuggestion> suggestions, Set<String> used,
-                            String mcuId, List<Map<String, Object>> mcuPins,
-                            String compId, String compType, List<Map<String, Object>> compPins,
-                            Set<String> assigned, int nextPin) {
+            String mcuId, List<Map<String, Object>> mcuPins,
+            String compId, String compType, List<Map<String, Object>> compPins,
+            Set<String> assigned, int nextPin) {
         for (String controlPinName : relayControlPins(compType)) {
             String controlPin = findPin(compPins, controlPinName, "in", "sig", "s");
-            if (controlPin == null) continue;
+            if (controlPin == null)
+                continue;
             int signalPinNumber = nextPin++;
             String mcuPin = findDigitalPin(mcuPins, signalPinNumber, assigned);
             if (mcuPin != null) {
@@ -490,13 +504,17 @@ public class WiringRuleEngine {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  PIN FINDER HELPERS
+    // PIN FINDER HELPERS
     // ══════════════════════════════════════════════════════════════════════
 
     private Map<String, Object> findMcu(List<Map<String, Object>> components) {
         return components.stream()
-                .filter(c -> MCU_TYPES.contains(str(c, "type")))
+                .filter(c -> isMcuType(str(c, "type")))
                 .findFirst().orElse(null);
+    }
+
+    private boolean isMcuType(String type) {
+        return MCU_PREFIXES.stream().anyMatch(type::startsWith);
     }
 
     private String findPin(List<Map<String, Object>> pins, String... names) {
@@ -505,7 +523,7 @@ public class WiringRuleEngine {
                 String pinId = str(pin, "id").toLowerCase();
                 String pinName = str(pin, "name").toLowerCase();
                 if (pinId.equals(name.toLowerCase()) || pinName.equals(name.toLowerCase()) ||
-                    pinId.contains(name.toLowerCase()) || pinName.contains(name.toLowerCase())) {
+                        pinId.contains(name.toLowerCase()) || pinName.contains(name.toLowerCase())) {
                     return str(pin, "id");
                 }
             }
@@ -537,7 +555,8 @@ public class WiringRuleEngine {
         // Fallback: any unassigned digital pin
         for (Map<String, Object> pin : mcuPins) {
             String name = str(pin, "name").toLowerCase();
-            if (name.startsWith("d") && !name.contains("sda") && !name.contains("scl") && !assigned.contains(str(pin, "id"))) {
+            if (name.startsWith("d") && !name.contains("sda") && !name.contains("scl")
+                    && !assigned.contains(str(pin, "id"))) {
                 return str(pin, "id");
             }
         }
@@ -559,21 +578,27 @@ public class WiringRuleEngine {
     }
 
     private int getSignalPinCount(String type) {
-        if (type.contains("ULTRASONIC")) return 2; // TRIG + ECHO
+        if (type.contains("ULTRASONIC"))
+            return 2; // TRIG + ECHO
         return 1;
     }
 
     private int relayChannelCount(String type) {
-        if ("RELAY_4CH".equals(type)) return 4;
-        if ("RELAY_2CH".equals(type)) return 2;
+        if ("RELAY_4CH".equals(type))
+            return 4;
+        if ("RELAY_2CH".equals(type))
+            return 2;
         return 1;
     }
 
     private String[] relayControlPins(String type) {
-        if ("RELAY_4CH".equals(type)) return new String[]{"in1", "in2", "in3", "in4"};
-        if ("RELAY_2CH".equals(type)) return new String[]{"in1", "in2"};
-        if ("RELAY_SPDT".equals(type)) return new String[]{"coil1"};
-        return new String[]{"in"};
+        if ("RELAY_4CH".equals(type))
+            return new String[] { "in1", "in2", "in3", "in4" };
+        if ("RELAY_2CH".equals(type))
+            return new String[] { "in1", "in2" };
+        if ("RELAY_SPDT".equals(type))
+            return new String[] { "coil1" };
+        return new String[] { "in" };
     }
 
     private int advanceDigitalPin(int current, int count) {
@@ -581,15 +606,16 @@ public class WiringRuleEngine {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  UTILITY
+    // UTILITY
     // ══════════════════════════════════════════════════════════════════════
 
     private void addSuggestion(List<AiWireSuggestion> suggestions, Set<String> used,
-                                String fromId, String fromPin, String toId, String toPin,
-                                String color, String description) {
+            String fromId, String fromPin, String toId, String toPin,
+            String color, String description) {
         String key = fromId + ":" + fromPin + "->" + toId + ":" + toPin;
         String reverseKey = toId + ":" + toPin + "->" + fromId + ":" + fromPin;
-        if (used.contains(key) || used.contains(reverseKey)) return;
+        if (used.contains(key) || used.contains(reverseKey))
+            return;
         used.add(key);
         suggestions.add(AiWireSuggestion.builder()
                 .fromComponentId(fromId).fromPin(fromPin)
@@ -601,7 +627,8 @@ public class WiringRuleEngine {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getPins(Map<String, Object> component) {
         Object pins = component.get("pins");
-        if (pins instanceof List) return (List<Map<String, Object>>) pins;
+        if (pins instanceof List)
+            return (List<Map<String, Object>>) pins;
         return Collections.emptyList();
     }
 

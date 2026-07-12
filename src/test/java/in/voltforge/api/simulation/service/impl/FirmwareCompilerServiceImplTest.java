@@ -2,7 +2,6 @@ package in.voltforge.api.simulation.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.voltforge.api.common.enums.BoardType;
-import in.voltforge.api.common.exception.BadRequestException;
 import in.voltforge.api.simulation.dto.FirmwareCompileRequest;
 import in.voltforge.api.simulation.dto.FirmwareCompileResponse;
 import org.junit.jupiter.api.Test;
@@ -13,13 +12,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FirmwareCompilerServiceImplTest {
 
     @Test
     void remoteCompileParsesHexResponse() {
-        FirmwareCompilerServiceImpl service = serviceWithRemoteResponse("{\"hex\":\":100000000C945C000C946E000C946E000C946E00CA\",\"stdout\":\"ok\",\"stderr\":\"\"}");
+        FirmwareCompilerServiceImpl service = serviceWithRemoteResponse(
+                "{\"hex\":\":100000000C945C000C946E000C946E000C946E00CA\",\"stdout\":\"ok\",\"stderr\":\"\"}");
         ReflectionTestUtils.setField(service, "compilerMode", "REMOTE");
         ReflectionTestUtils.setField(service, "remoteCompilerUrl", "https://compiler.example/build");
         ReflectionTestUtils.setField(service, "timeoutSeconds", 5);
@@ -37,15 +36,37 @@ class FirmwareCompilerServiceImplTest {
     }
 
     @Test
-    void unsupportedBoardFailsBeforeCompilerIsCalled() {
+    void remoteCompileUsesExpandedBoardTarget() {
+        FirmwareCompilerServiceImpl service = serviceWithRemoteResponse(
+                "{\"hex\":\":100000000C945C000C946E000C946E000C946E00CA\",\"stdout\":\"ok\",\"stderr\":\"\"}");
+        ReflectionTestUtils.setField(service, "compilerMode", "REMOTE");
+        ReflectionTestUtils.setField(service, "remoteCompilerUrl", "https://compiler.example/build");
+        ReflectionTestUtils.setField(service, "timeoutSeconds", 5);
+
+        FirmwareCompileResponse response = service.compile(FirmwareCompileRequest.builder()
+                .source("void setup(){} void loop(){}")
+                .boardType(BoardType.ESP32)
+                .sketchName("ESP32 Test")
+                .build());
+
+        assertThat(response.isSuccess()).isTrue();
+        assertThat(response.getFqbn()).isEqualTo("esp32:esp32:esp32");
+        assertThat(response.getMetadata()).containsEntry("remoteBoard", "esp32");
+    }
+
+    @Test
+    void unsupportedBoardReturnsStructuredFailure() {
         FirmwareCompilerServiceImpl service = serviceWithRemoteResponse("{}");
 
-        assertThatThrownBy(() -> service.compile(FirmwareCompileRequest.builder()
+        FirmwareCompileResponse response = service.compile(FirmwareCompileRequest.builder()
                 .source("void setup(){}")
-                .boardType(BoardType.ESP32)
-                .build()))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("AVR simulation currently supports");
+                .boardType(BoardType.BEAGLEBONE_BLACK)
+                .build());
+
+        assertThat(response.isSuccess()).isFalse();
+        assertThat(response.getFqbn()).isEqualTo("unsupported:BEAGLEBONE_BLACK");
+        assertThat(response.getStderr()).contains("Linux SBC");
+        assertThat(response.getMetadata()).containsEntry("unsupported", true);
     }
 
     @Test

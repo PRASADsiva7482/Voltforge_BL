@@ -29,6 +29,8 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
 
     List<Project> findByForkedFromId(String projectId);
 
+    List<Project> findByOwnerIdAndForkedFromId(String ownerId, String forkedFromId);
+
     long countByOwnerId(String ownerId);
 
     @Query("SELECT COUNT(p) FROM Project p")

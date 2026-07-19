@@ -32,6 +32,7 @@ public class ProjectMapper {
                 .forkCount(project.getForkCount())
                 .viewCount(project.getViewCount())
                 .forkedFromId(project.getForkedFrom() != null ? project.getForkedFrom().getId() : null)
+                .forkedFromName(project.getForkedFrom() != null ? project.getForkedFrom().getName() : null)
                 .thumbnailUrl(project.getThumbnailUrl())
                 .tags(project.getTags())
                 .owner(userMapper.toResponse(project.getOwner()))

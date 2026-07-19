@@ -26,6 +26,8 @@ public class ProjectResponse {
     private Integer forkCount;
     private Integer viewCount;
     private String forkedFromId;
+    private String forkedFromName;
+    private String userForkId;
     private String thumbnailUrl;
     private String tags;
     private UserResponse owner;

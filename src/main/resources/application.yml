@@ -98,10 +98,9 @@ app:
   rate-limit:
     requests-per-minute: 60
   ai:
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://100.122.105.63:11434}
-      model: ${OLLAMA_MODEL:gemma3}
-      timeout: 120
+    model:
+      url: ${VOLTFORGE_AI_URL:http://localhost:2002/voltForge-ai}
+      timeout: 15
   simulation:
     compiler:
       # REMOTE posts { sketch, fqbn, boardType } to a compiler service.

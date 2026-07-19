@@ -125,7 +125,20 @@ public class ProjectServiceImpl implements ProjectService {
             }
         }
 
-        return projectMapper.toResponse(project);
+        ProjectResponse response = projectMapper.toResponse(project);
+
+        // Populate userForkId if the user has already forked this project
+        if (keycloakId != null) {
+            User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
+            if (user != null) {
+                List<Project> forks = projectRepository.findByOwnerIdAndForkedFromId(user.getId(), projectId);
+                if (!forks.isEmpty()) {
+                    response.setUserForkId(forks.get(0).getId());
+                }
+            }
+        }
+
+        return response;
     }
 
     @Override

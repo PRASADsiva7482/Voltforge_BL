@@ -19,4 +19,9 @@ public class AiGenerateResponse {
     private Map<String, Object> componentConfig;
     private List<AiWireSuggestion> wireSuggestions;
     private String generatedCode;
+    private List<Map<String, Object>> additions;
+    private List<Map<String, Object>> removals;
+    private List<Map<String, Object>> codeFixes;
+    private List<Map<String, String>> citations;
+    private Double confidence;
 }

@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Map;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -13,4 +16,6 @@ public class AiChatResponse {
     private String reply;
     private String generatedCode;
     private boolean hasCode;
+    private Double confidence;
+    private List<Map<String, String>> citations;
 }

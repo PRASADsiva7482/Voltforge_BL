@@ -16,6 +16,7 @@ public class AiSchematicToCodeRequest {
     private String boardType;
     private List<ComponentInfo> components;
     private List<WireInfo> wires;
+    private String code;
     private String additionalInstructions;
 
     @Data
@@ -23,10 +24,14 @@ public class AiSchematicToCodeRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ComponentInfo {
+        private String id;
         private String type;
         private String name;
         private Map<String, Object> properties;
+        private List<Map<String, Object>> pins;
         private List<String> connectedPins;
+        private Double x;
+        private Double y;
     }
 
     @Data
@@ -34,9 +39,11 @@ public class AiSchematicToCodeRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class WireInfo {
+        private String id;
         private String fromComponent;
         private String fromPin;
         private String toComponent;
         private String toPin;
+        private String color;
     }
 }

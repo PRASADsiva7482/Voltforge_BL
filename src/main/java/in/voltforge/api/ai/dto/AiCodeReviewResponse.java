@@ -17,6 +17,7 @@ public class AiCodeReviewResponse {
     private List<String> suggestions;
     private String improvedCode;
     private int score; // 0-100
+    private Double confidence;
 
     @Data
     @Builder

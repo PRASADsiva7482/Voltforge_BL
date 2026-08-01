@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -16,6 +17,11 @@ public class AiValidatorResponse {
     private int safetyScore;
     private List<ValidationIssue> issues;
     private String generalFeedback;
+    private List<Map<String, Object>> additions;
+    private List<Map<String, Object>> removals;
+    private List<AiWireSuggestion> wireSuggestions;
+    private List<Map<String, Object>> codeFixes;
+    private Double confidence;
 
     @Data
     @Builder

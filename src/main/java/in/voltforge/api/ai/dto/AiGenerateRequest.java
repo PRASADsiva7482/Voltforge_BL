@@ -1,13 +1,13 @@
 package in.voltforge.api.ai.dto;
 
 import in.voltforge.api.common.enums.BoardType;
-import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -15,10 +15,17 @@ import java.util.List;
 @AllArgsConstructor
 public class AiGenerateRequest {
 
-    @NotBlank(message = "Prompt is required")
     private String prompt;
 
     private BoardType boardType;
 
     private List<String> componentTypes;
+
+    private List<Map<String, Object>> components;
+
+    private List<Map<String, Object>> wires;
+
+    private String code;
+
+    private String context;
 }

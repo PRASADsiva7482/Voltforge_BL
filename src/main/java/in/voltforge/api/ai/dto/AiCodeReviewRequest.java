@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiCodeReviewRequest {
     private String code;
     private String boardType;
@@ -21,3 +23,4 @@ public class AiCodeReviewRequest {
     private String circuitDescription;
     private List<String> compilerDiagnostics;
 }
+

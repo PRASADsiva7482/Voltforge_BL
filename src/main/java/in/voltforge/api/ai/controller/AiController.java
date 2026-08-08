@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/ai")
 @RequiredArgsConstructor
-@Tag(name = "AI", description = "AI-assisted circuit and code generation APIs (powered by Ollama Gemma)")
+@Tag(name = "AI", description = "AI-assisted circuit and code generation APIs (powered by VoltForge AI)")
 public class AiController {
 
     private final AiService aiService;

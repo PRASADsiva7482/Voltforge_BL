@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiValidatorResponse {
     private boolean isValid;
     private int safetyScore;
@@ -27,6 +29,7 @@ public class AiValidatorResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ValidationIssue {
         private String severity; // CRITICAL, WARNING, INFO
         private String componentId;
@@ -34,3 +37,4 @@ public class AiValidatorResponse {
         private String suggestedFix;
     }
 }
+

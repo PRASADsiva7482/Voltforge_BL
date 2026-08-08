@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import in.voltforge.api.common.enums.BoardType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,6 +14,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiGenerateRequest {
 
     private String prompt;
@@ -29,3 +31,4 @@ public class AiGenerateRequest {
 
     private String context;
 }
+

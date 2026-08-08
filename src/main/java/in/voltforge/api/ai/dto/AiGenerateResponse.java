@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiGenerateResponse {
     private String status;
     private String message;
@@ -25,3 +27,4 @@ public class AiGenerateResponse {
     private List<Map<String, String>> citations;
     private Double confidence;
 }
+

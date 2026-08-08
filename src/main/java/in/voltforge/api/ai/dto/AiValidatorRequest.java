@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiValidatorRequest {
     private String boardType;
     private List<ComponentInfo> components;
@@ -24,6 +26,7 @@ public class AiValidatorRequest {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ComponentInfo {
         private String id;
         private String type;
@@ -32,12 +35,16 @@ public class AiValidatorRequest {
         private Map<String, Object> properties;
         private Double x;
         private Double y;
+        private Double height;
+        private Double width;
+        private Double rotation;
     }
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WireInfo {
         private String id;
         private String fromComponent;
@@ -47,3 +54,4 @@ public class AiValidatorRequest {
         private String color;
     }
 }
+

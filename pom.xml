@@ -108,7 +108,7 @@
             <version>8.10.1</version>
         </dependency>
 
-        <!-- Spring WebFlux (for Ollama HTTP client) -->
+        <!-- Spring WebFlux (for VoltForge AI HTTP client) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>

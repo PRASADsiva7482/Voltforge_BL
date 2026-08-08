@@ -1,5 +1,6 @@
 package in.voltforge.api.ai.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +12,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AiCodeReviewResponse {
     private String summary;
     private List<ReviewIssue> issues;
@@ -23,6 +25,7 @@ public class AiCodeReviewResponse {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ReviewIssue {
         private String severity; // ERROR, WARNING, INFO
         private int line;
@@ -30,3 +33,4 @@ public class AiCodeReviewResponse {
         private String fix;
     }
 }
+

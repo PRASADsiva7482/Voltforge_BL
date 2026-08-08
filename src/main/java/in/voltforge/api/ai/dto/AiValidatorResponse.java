@@ -21,6 +21,7 @@ public class AiValidatorResponse {
     private String generalFeedback;
     private List<Map<String, Object>> additions;
     private List<Map<String, Object>> removals;
+    private List<Map<String, Object>> valueChanges;
     private List<AiWireSuggestion> wireSuggestions;
     private List<Map<String, Object>> codeFixes;
     private Double confidence;
@@ -37,4 +38,3 @@ public class AiValidatorResponse {
         private String suggestedFix;
     }
 }
-

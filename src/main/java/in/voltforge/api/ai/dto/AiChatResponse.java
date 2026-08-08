@@ -20,5 +20,9 @@ public class AiChatResponse {
     private boolean hasCode;
     private Double confidence;
     private List<Map<String, String>> citations;
+    private List<AiWireSuggestion> wireSuggestions;
+    private List<Map<String, Object>> additions;
+    private List<Map<String, Object>> removals;
+    private List<Map<String, Object>> valueChanges;
+    private List<Map<String, Object>> codeFixes;
 }
-

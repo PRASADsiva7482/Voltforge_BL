@@ -86,6 +86,13 @@ public class AiServiceImpl implements AiService {
             Map<String, Object> requestBody = new LinkedHashMap<>();
             requestBody.put("message", request.getMessage());
             requestBody.put("context", request.getContext() != null ? request.getContext() : "");
+            requestBody.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
+            requestBody.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
+            requestBody.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());
+            requestBody.put("netlist", request.getNetlist() != null ? request.getNetlist() : Collections.emptyMap());
+            requestBody.put("code", defaultString(request.getCode(), ""));
+            requestBody.put("canvasData", request.getCanvasData() != null ? request.getCanvasData() : Collections.emptyMap());
+            requestBody.put("simulationState", request.getSimulationState() != null ? request.getSimulationState() : Collections.emptyMap());
             requestBody.put("history", history);
 
             JsonNode data = post("/api/v1/model/chat", requestBody);
@@ -96,6 +103,11 @@ public class AiServiceImpl implements AiService {
                     .hasCode(data.path("hasCode").asBoolean(false))
                     .confidence(readDouble(data, "confidence"))
                     .citations(readStringMapList(data, "citations"))
+                    .wireSuggestions(parseWireSuggestions(data))
+                    .additions(readMapList(data, "additions"))
+                    .removals(readMapList(data, "removals"))
+                    .valueChanges(readMapList(data, "valueChanges"))
+                    .codeFixes(readMapList(data, "codeFixes"))
                     .build();
 
         } catch (Exception e) {
@@ -105,6 +117,11 @@ public class AiServiceImpl implements AiService {
                     .hasCode(false)
                     .confidence(0.0)
                     .citations(Collections.emptyList())
+                    .wireSuggestions(Collections.emptyList())
+                    .additions(Collections.emptyList())
+                    .removals(Collections.emptyList())
+                    .valueChanges(Collections.emptyList())
+                    .codeFixes(Collections.emptyList())
                     .build();
         }
     }
@@ -196,6 +213,7 @@ public class AiServiceImpl implements AiService {
                     .generalFeedback(data.path("generalFeedback").asText(""))
                     .additions(readMapList(data, "additions"))
                     .removals(readMapList(data, "removals"))
+                    .valueChanges(readMapList(data, "valueChanges"))
                     .wireSuggestions(parseWireSuggestions(data))
                     .codeFixes(readMapList(data, "codeFixes"))
                     .confidence(readDouble(data, "confidence"))
@@ -210,6 +228,7 @@ public class AiServiceImpl implements AiService {
                     .generalFeedback("AI microservice is currently offline.")
                     .additions(Collections.emptyList())
                     .removals(Collections.emptyList())
+                    .valueChanges(Collections.emptyList())
                     .wireSuggestions(Collections.emptyList())
                     .codeFixes(Collections.emptyList())
                     .confidence(0.0)

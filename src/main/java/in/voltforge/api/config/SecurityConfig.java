@@ -41,6 +41,8 @@ public class SecurityConfig {
             "/api/v1/auth/health",
             "/api/v1/components/**",
             "/api/v1/projects/public/**",
+            "/api/v1/ai/**",
+            "/api/v1/simulation/**",
             "/ws/**"
     };
 

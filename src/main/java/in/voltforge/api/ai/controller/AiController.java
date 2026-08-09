@@ -7,8 +7,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 
 @RestController
 @RequestMapping("/api/v1/ai")
@@ -48,6 +50,12 @@ public class AiController {
             @Valid @RequestBody AiChatRequest request) {
         AiChatResponse response = aiService.chat(request);
         return ResponseEntity.ok(ApiResponse.success("AI response generated", response));
+    }
+
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Streaming chat with VoltForge AI — SSE token-by-token with thinking")
+    public Flux<String> chatStream(@RequestBody AiChatRequest request) {
+        return aiService.chatStream(request);
     }
 
     @PostMapping("/review-code")

@@ -31,4 +31,17 @@ public class VoltforgeAiConfig {
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
                 .build();
     }
+
+    /** Longer timeout for SSE streaming connections (token-by-token chat). */
+    @Bean("voltforgeAiStreamingClient")
+    public WebClient voltforgeAiStreamingClient() {
+        HttpClient httpClient = HttpClient.create()
+                .responseTimeout(Duration.ofSeconds(60));
+
+        return WebClient.builder()
+                .baseUrl(modelUrl)
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .build();
+    }
 }

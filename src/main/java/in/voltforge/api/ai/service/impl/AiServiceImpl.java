@@ -14,6 +14,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Duration;
 import java.util.*;
 
+import org.springframework.http.MediaType;
+import reactor.core.publisher.Flux;
+
 /**
  * Delegates VoltForge AI requests to the standalone Python AI microservice.
  */
@@ -22,13 +25,16 @@ import java.util.*;
 public class AiServiceImpl implements AiService {
 
     private final WebClient voltforgeAiWebClient;
+    private final WebClient voltforgeAiStreamingClient;
     private final VoltforgeAiConfig aiConfig;
     private final ObjectMapper objectMapper;
 
     public AiServiceImpl(@Qualifier("voltforgeAiWebClient") WebClient voltforgeAiWebClient,
+                         @Qualifier("voltforgeAiStreamingClient") WebClient voltforgeAiStreamingClient,
                          VoltforgeAiConfig aiConfig,
                          ObjectMapper objectMapper) {
         this.voltforgeAiWebClient = voltforgeAiWebClient;
+        this.voltforgeAiStreamingClient = voltforgeAiStreamingClient;
         this.aiConfig = aiConfig;
         this.objectMapper = objectMapper;
     }
@@ -124,6 +130,50 @@ public class AiServiceImpl implements AiService {
                     .codeFixes(Collections.emptyList())
                     .build();
         }
+    }
+
+    @Override
+    public Flux<String> chatStream(AiChatRequest request) {
+        log.info("Delegating streaming chat to VoltForge AI microservice");
+        Map<String, Object> requestBody = buildChatBody(request);
+
+        return voltforgeAiStreamingClient.post()
+                .uri("/api/v1/model/chat/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .onErrorResume(e -> {
+                    log.error("Streaming chat error: {}", e.getMessage(), e);
+                    String errorEvent = "{\"type\":\"done\",\"confidence\":0.0," +
+                            "\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+                    return Flux.just(errorEvent);
+                });
+    }
+
+    private Map<String, Object> buildChatBody(AiChatRequest request) {
+        List<Map<String, String>> history = new ArrayList<>();
+        if (request.getHistory() != null) {
+            for (var msg : request.getHistory()) {
+                history.add(Map.of(
+                        "role", nullToEmpty(msg.getRole()),
+                        "content", nullToEmpty(msg.getContent())
+                ));
+            }
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("message", request.getMessage());
+        body.put("context", request.getContext() != null ? request.getContext() : "");
+        body.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
+        body.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
+        body.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());
+        body.put("netlist", request.getNetlist() != null ? request.getNetlist() : Collections.emptyMap());
+        body.put("code", defaultString(request.getCode(), ""));
+        body.put("canvasData", request.getCanvasData() != null ? request.getCanvasData() : Collections.emptyMap());
+        body.put("simulationState", request.getSimulationState() != null ? request.getSimulationState() : Collections.emptyMap());
+        body.put("history", history);
+        return body;
     }
 
     @Override

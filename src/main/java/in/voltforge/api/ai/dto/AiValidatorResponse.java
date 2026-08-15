@@ -9,14 +9,18 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AiValidatorResponse {
+    @JsonProperty("isValid")
     private boolean isValid;
     private int safetyScore;
+
     private List<ValidationIssue> issues;
     private String generalFeedback;
     private List<Map<String, Object>> additions;

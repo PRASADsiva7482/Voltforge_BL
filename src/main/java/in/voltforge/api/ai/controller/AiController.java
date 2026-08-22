@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/v1/ai")
 @RequiredArgsConstructor
@@ -80,5 +82,27 @@ public class AiController {
             @Valid @RequestBody AiValidatorRequest request) {
         AiValidatorResponse response = aiService.validateCircuit(request);
         return ResponseEntity.ok(ApiResponse.success("Circuit validation completed", response));
+    }
+
+    @PostMapping("/circuit/drc-check")
+    @Operation(summary = "Run PCB design rule checks")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> runPcbDrc(
+            @RequestBody PcbManufacturingRequest request) {
+        Map<String, Object> response = aiService.runPcbDrc(request);
+        return ResponseEntity.ok(ApiResponse.success("PCB DRC completed", response));
+    }
+
+    @PostMapping(value = "/circuit/export-gerber", produces = "application/zip")
+    @Operation(summary = "Export PCB manufacturing Gerber ZIP")
+    public ResponseEntity<byte[]> exportPcbGerber(
+            @RequestBody PcbManufacturingRequest request) {
+        byte[] zip = aiService.exportPcbGerber(request);
+        String name = request != null && request.getProjectName() != null && !request.getProjectName().isBlank()
+                ? request.getProjectName().replaceAll("[^A-Za-z0-9_.-]", "_")
+                : "VoltForge_PCB";
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + name + "_gerber.zip\"")
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(zip);
     }
 }

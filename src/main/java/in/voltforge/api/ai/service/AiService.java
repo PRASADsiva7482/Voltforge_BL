@@ -3,6 +3,8 @@ package in.voltforge.api.ai.service;
 import in.voltforge.api.ai.dto.*;
 import reactor.core.publisher.Flux;
 
+import java.util.Map;
+
 public interface AiService {
 
     AiGenerateResponse generateCircuit(AiGenerateRequest request);
@@ -21,4 +23,8 @@ public interface AiService {
     AiGenerateResponse schematicToCode(AiSchematicToCodeRequest request);
 
     AiValidatorResponse validateCircuit(AiValidatorRequest request);
+
+    Map<String, Object> runPcbDrc(PcbManufacturingRequest request);
+
+    byte[] exportPcbGerber(PcbManufacturingRequest request);
 }

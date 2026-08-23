@@ -286,6 +286,43 @@ public class AiServiceImpl implements AiService {
         }
     }
 
+    @Override
+    public Map<String, Object> runPcbDrc(PcbManufacturingRequest request) {
+        log.info("Delegating PCB DRC to VoltForge AI microservice");
+        try {
+            JsonNode data = post("/api/v1/model/circuit/drc-check", buildPcbManufacturingBody(request));
+            return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            log.error("PCB DRC microservice error: {}", e.getMessage(), e);
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            fallback.put("passed", false);
+            fallback.put("totalViolations", 1);
+            fallback.put("errors", 1);
+            fallback.put("warnings", 0);
+            fallback.put("violations", List.of(Map.of(
+                    "id", "drc_service_unavailable",
+                    "severity", "ERROR",
+                    "rule", "DRC service availability",
+                    "message", "PCB DRC service is unavailable: " + e.getMessage()
+            )));
+            fallback.put("rulesChecked", Collections.emptyList());
+            return fallback;
+        }
+    }
+
+    @Override
+    public byte[] exportPcbGerber(PcbManufacturingRequest request) {
+        log.info("Delegating PCB Gerber export to VoltForge AI microservice");
+        byte[] response = voltforgeAiWebClient.post()
+                .uri("/api/v1/model/circuit/export-gerber")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(buildPcbManufacturingBody(request))
+                .retrieve()
+                .bodyToMono(byte[].class)
+                .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
+        return response != null ? response : new byte[0];
+    }
+
     private AiGenerateResponse callGenerateEndpoint(String uri, AiGenerateRequest request, String defaultMessage) {
         try {
             JsonNode data = post(uri, buildGenerateBody(request));
@@ -351,6 +388,23 @@ public class AiServiceImpl implements AiService {
         body.put("context", request != null ? defaultString(request.getContext(), "") : "");
         body.put("componentTypes", request != null && request.getComponentTypes() != null ? request.getComponentTypes() : Collections.emptyList());
         return body;
+    }
+
+    private Map<String, Object> buildPcbManufacturingBody(PcbManufacturingRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("boardWidth_mm", request != null && request.getBoardWidthMm() != null ? request.getBoardWidthMm() : 100.0);
+        body.put("boardHeight_mm", request != null && request.getBoardHeightMm() != null ? request.getBoardHeightMm() : 80.0);
+        body.put("footprints", request != null && request.getFootprints() != null ? request.getFootprints() : Collections.emptyList());
+        body.put("traces", request != null && request.getTraces() != null ? request.getTraces() : Collections.emptyList());
+        body.put("vias", request != null && request.getVias() != null ? request.getVias() : Collections.emptyList());
+        body.put("wires", request != null && request.getWires() != null ? request.getWires() : Collections.emptyList());
+        body.put("projectName", sanitizeProjectName(request != null ? request.getProjectName() : null));
+        return body;
+    }
+
+    private String sanitizeProjectName(String value) {
+        String name = value != null && !value.isBlank() ? value : "VoltForge_PCB";
+        return name.replaceAll("[^A-Za-z0-9_.-]", "_");
     }
 
     private List<AiWireSuggestion> parseWireSuggestions(JsonNode data) {

@@ -12,7 +12,7 @@ RUN addgroup -S voltforge && adduser -S voltforge -G voltforge
 COPY --from=builder /app/target/*.jar app.jar
 RUN chown voltforge:voltforge app.jar
 USER voltforge
-EXPOSE 8081
+EXPOSE 2001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:8081/actuator/health || exit 1
+    CMD wget -qO- http://localhost:2001/voltForge-app/actuator/health || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]

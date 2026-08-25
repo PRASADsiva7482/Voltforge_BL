@@ -9,6 +9,7 @@ import in.voltforge.api.project.entity.CodeFile;
 import in.voltforge.api.project.entity.Project;
 import in.voltforge.api.project.mapper.ProjectMapper;
 import in.voltforge.api.project.repository.ProjectRepository;
+import in.voltforge.api.project.repository.ProjectShareRepository;
 import in.voltforge.api.project.service.ProjectService;
 import in.voltforge.api.user.entity.User;
 import in.voltforge.api.user.repository.UserRepository;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +39,7 @@ public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final ProjectShareRepository projectShareRepository;
     private final ProjectMapper projectMapper;
 
     // ── Debounce infrastructure for canvas-layout saves ───────────────────────
@@ -111,19 +114,13 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
 
-        // Increment view count
-        projectRepository.incrementViewCount(projectId);
-
-        // Check access: public projects are accessible to anyone
-        if (!project.getIsPublic()) {
-            if (keycloakId == null) {
-                throw new ForbiddenException("Access denied to private project");
-            }
-            User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
-            if (user == null || !project.getOwner().getId().equals(user.getId())) {
-                throw new ForbiddenException("Access denied to private project");
-            }
+        if (!canAccessProject(projectId, keycloakId)) {
+            throw new ForbiddenException("Access denied to project");
         }
+
+        // Count only successful reads. Previously unauthorized requests could
+        // increment the counter before the access check.
+        projectRepository.incrementViewCount(projectId);
 
         ProjectResponse response = projectMapper.toResponse(project);
 
@@ -139,6 +136,46 @@ public class ProjectServiceImpl implements ProjectService {
         }
 
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean canAccessProject(String projectId, String keycloakId) {
+        Project project = projectRepository.findById(projectId).orElse(null);
+        if (project == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(project.getIsPublic())) {
+            return true;
+        }
+        if (keycloakId == null || keycloakId.isBlank()) {
+            return false;
+        }
+
+        User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
+        return user != null && (project.getOwner().getId().equals(user.getId())
+                || projectShareRepository.existsByProjectIdAndSharedWithUserId(projectId, user.getId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean canEditProject(String projectId, String keycloakId) {
+        if (keycloakId == null || keycloakId.isBlank()) {
+            return false;
+        }
+        Project project = projectRepository.findById(projectId).orElse(null);
+        User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
+        if (project == null || user == null) {
+            return false;
+        }
+        if (project.getOwner().getId().equals(user.getId())) {
+            return true;
+        }
+        return projectShareRepository.findByProjectIdAndSharedWithUserId(projectId, user.getId())
+                .map(share -> share.getPermission() != null
+                        && (share.getPermission().name().equals("EDIT")
+                        || share.getPermission().name().equals("ADMIN")))
+                .orElse(false);
     }
 
     @Override
@@ -244,15 +281,23 @@ public class ProjectServiceImpl implements ProjectService {
             log.warn("Canvas flush skipped — project '{}' not found", projectId);
             return;
         }
-        // Ownership guard — the debounce scheduler runs after the HTTP request
-        // has already validated the user, but we double-check here for safety.
-        User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
-        if (user == null || !project.getOwner().getId().equals(user.getId())) {
-            log.warn("Canvas flush rejected — user '{}' is not owner of project '{}'",
+        // Re-check edit permission in the delayed task because the original
+        // WebSocket request has already returned by the time this runs.
+        if (!canEditProject(projectId, keycloakId)) {
+            log.warn("Canvas flush rejected — user '{}' cannot edit project '{}'",
                      keycloakId, projectId);
             return;
         }
-        project.setCanvasLayout(canvasLayout);
+        Map<String, Object> persistedCanvasLayout = new LinkedHashMap<>(canvasLayout);
+        Object pcbLayout = persistedCanvasLayout.remove("pcbLayout");
+        project.setCanvasLayout(persistedCanvasLayout);
+        if (pcbLayout != null) {
+            Map<String, Object> componentConfig = project.getComponentConfig() == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(project.getComponentConfig());
+            componentConfig.put("pcbLayout", pcbLayout);
+            project.setComponentConfig(componentConfig);
+        }
         projectRepository.save(project);
         log.info("Canvas layout flushed to DB for project '{}'", projectId);
     }

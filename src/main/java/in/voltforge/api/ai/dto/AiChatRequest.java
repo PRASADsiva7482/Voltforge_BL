@@ -22,6 +22,8 @@ public class AiChatRequest {
 
     private String context; // optional context (current code, canvas state, etc.)
 
+    private String canvasContext;
+
     private String boardType;
 
     private List<Map<String, Object>> components;

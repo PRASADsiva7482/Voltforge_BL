@@ -92,6 +92,7 @@ public class AiServiceImpl implements AiService {
             Map<String, Object> requestBody = new LinkedHashMap<>();
             requestBody.put("message", request.getMessage());
             requestBody.put("context", request.getContext() != null ? request.getContext() : "");
+            requestBody.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
             requestBody.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
             requestBody.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
             requestBody.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());
@@ -165,6 +166,7 @@ public class AiServiceImpl implements AiService {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", request.getMessage());
         body.put("context", request.getContext() != null ? request.getContext() : "");
+        body.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
         body.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
         body.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
         body.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());

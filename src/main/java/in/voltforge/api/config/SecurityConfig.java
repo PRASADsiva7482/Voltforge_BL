@@ -1,7 +1,6 @@
 package in.voltforge.api.config;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -29,9 +28,6 @@ import java.util.stream.Collectors;
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
-    @Value("${keycloak.resource:voltforge-app}")
-    private String keycloakClientId;
-
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api-docs/**",
             "/swagger-ui/**",
@@ -39,10 +35,10 @@ public class SecurityConfig {
             "/actuator/health",
             "/actuator/info",
             "/api/v1/auth/health",
-            "/api/v1/components/**",
             "/api/v1/projects/public/**",
-            "/api/v1/ai/**",
-            "/api/v1/simulation/**",
+            // The HTTP handshake cannot carry the STOMP Authorization header
+            // in every browser/SockJS client. Authentication is enforced on
+            // the STOMP CONNECT frame by WebSocketAuthChannelInterceptor.
             "/ws-native/**",
             "/ws-native",
             "/ws/**"
@@ -93,15 +89,22 @@ public class SecurityConfig {
                         .collect(Collectors.toList()));
             }
 
-            // Extract client-specific roles
+            // Extract client-specific roles from every resource audience. This
+            // keeps role checks consistent when client IDs differ by environment.
             Map<String, Object> resourceAccess = jwt.getClaimAsMap("resource_access");
-            if (resourceAccess != null && resourceAccess.containsKey(keycloakClientId)) {
-                Map<String, Object> clientAccess = (Map<String, Object>) resourceAccess.get(keycloakClientId);
-                if (clientAccess.containsKey("roles")) {
-                    List<String> clientRoles = (List<String>) clientAccess.get("roles");
-                    authorities.addAll(clientRoles.stream()
-                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                            .collect(Collectors.toList()));
+            if (resourceAccess != null) {
+                for (Object rawClientAccess : resourceAccess.values()) {
+                    if (!(rawClientAccess instanceof Map<?, ?> clientAccess)) {
+                        continue;
+                    }
+                    Object rawRoles = clientAccess.get("roles");
+                    if (rawRoles instanceof List<?> clientRoles) {
+                        authorities.addAll(clientRoles.stream()
+                                .filter(String.class::isInstance)
+                                .map(String.class::cast)
+                                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                                .collect(Collectors.toList()));
+                    }
                 }
             }
 

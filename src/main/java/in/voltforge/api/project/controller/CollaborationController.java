@@ -2,11 +2,13 @@ package in.voltforge.api.project.controller;
 
 import in.voltforge.api.project.dto.CanvasEvent;
 import in.voltforge.api.project.dto.CursorEvent;
+import in.voltforge.api.project.service.ProjectService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Controller;
 
@@ -18,6 +20,7 @@ import java.security.Principal;
 public class CollaborationController {
 
     private final SimpMessageSendingOperations messagingTemplate;
+    private final ProjectService projectService;
 
     @MessageMapping("/project/{projectId}/canvas.update")
     public void handleCanvasUpdate(
@@ -25,13 +28,22 @@ public class CollaborationController {
             @Payload CanvasEvent event,
             Principal principal
     ) {
+        requireEditAccess(projectId, principal);
+        if (event == null) {
+            throw new MessagingException("Canvas event is required");
+        }
         event.setProjectId(projectId);
-        event.setUserId(resolveUserId(principal, event.getUserId()));
+        event.setUserId(principal.getName());
         if (event.getTimestamp() == null) {
             event.setTimestamp(System.currentTimeMillis());
         }
 
         log.debug("Canvas event for project {}: {}", projectId, event.getEventType());
+        if (event.getPayload() != null
+                && event.getPayload().containsKey("nodes")
+                && event.getPayload().containsKey("wires")) {
+            projectService.scheduleCanvasLayoutSave(projectId, principal.getName(), event.getPayload());
+        }
         messagingTemplate.convertAndSend("/topic/project/" + projectId + "/canvas", event);
     }
 
@@ -41,20 +53,29 @@ public class CollaborationController {
             @Payload CursorEvent event,
             Principal principal
     ) {
+        requireAccess(projectId, principal);
         event.setProjectId(projectId);
-        event.setUserId(resolveUserId(principal, event.getUserId()));
+        event.setUserId(principal.getName());
         messagingTemplate.convertAndSend("/topic/project/" + projectId + "/cursors", event);
     }
 
     @MessageMapping("/project/{projectId}/simulation.status")
-    public void handleSimulationStatus(@DestinationVariable String projectId, @Payload String status) {
+    public void handleSimulationStatus(@DestinationVariable String projectId, @Payload String status, Principal principal) {
+        requireEditAccess(projectId, principal);
         messagingTemplate.convertAndSend("/topic/project/" + projectId + "/simulation", status);
     }
 
-    private String resolveUserId(Principal principal, String fallbackUserId) {
-        if (principal != null && principal.getName() != null && !principal.getName().isBlank()) {
-            return principal.getName();
+    private void requireAccess(String projectId, Principal principal) {
+        if (principal == null || principal.getName() == null
+                || !projectService.canAccessProject(projectId, principal.getName())) {
+            throw new MessagingException("Access denied to project " + projectId);
         }
-        return fallbackUserId;
+    }
+
+    private void requireEditAccess(String projectId, Principal principal) {
+        if (principal == null || principal.getName() == null
+                || !projectService.canEditProject(projectId, principal.getName())) {
+            throw new MessagingException("Edit access denied to project " + projectId);
+        }
     }
 }

@@ -3,11 +3,13 @@ package in.voltforge.api.ai.service.impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import in.voltforge.api.ai.dto.*;
 import in.voltforge.api.ai.service.AiService;
 import in.voltforge.api.config.VoltforgeAiConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -15,6 +17,7 @@ import java.time.Duration;
 import java.util.*;
 
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
 /**
@@ -134,7 +137,7 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
-    public Flux<String> chatStream(AiChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(AiChatRequest request) {
         log.info("Delegating streaming chat to VoltForge AI microservice");
         Map<String, Object> requestBody = buildChatBody(request);
 
@@ -144,12 +147,17 @@ public class AiServiceImpl implements AiService {
                 .bodyValue(requestBody)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .retrieve()
-                .bodyToFlux(String.class)
+                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
                 .onErrorResume(e -> {
                     log.error("Streaming chat error: {}", e.getMessage(), e);
-                    String errorEvent = "{\"type\":\"done\",\"confidence\":0.0," +
-                            "\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
-                    return Flux.just(errorEvent);
+                    ObjectNode payload = objectMapper.createObjectNode();
+                    payload.put("type", "error");
+                    payload.put("code", "AI_GATEWAY_STREAM_FAILED");
+                    payload.put("message", "The AI gateway could not continue the response.");
+                    payload.put("retryable", true);
+                    return Flux.just(ServerSentEvent.<String>builder(payload.toString())
+                            .event("error")
+                            .build());
                 });
     }
 
@@ -165,6 +173,8 @@ public class AiServiceImpl implements AiService {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", request.getMessage());
+        body.put("sessionId", request.getSessionId());
+        body.put("projectId", request.getProjectId());
         body.put("context", request.getContext() != null ? request.getContext() : "");
         body.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
         body.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
@@ -175,6 +185,7 @@ public class AiServiceImpl implements AiService {
         body.put("canvasData", request.getCanvasData() != null ? request.getCanvasData() : Collections.emptyMap());
         body.put("simulationState", request.getSimulationState() != null ? request.getSimulationState() : Collections.emptyMap());
         body.put("history", history);
+        body.put("files", request.getFiles() != null ? request.getFiles() : Collections.emptyList());
         return body;
     }
 

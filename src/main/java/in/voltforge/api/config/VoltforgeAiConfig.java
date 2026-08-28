@@ -20,16 +20,20 @@ public class VoltforgeAiConfig {
     @Value("${app.ai.model.timeout:15}")
     private int timeoutSeconds;
 
+    @Value("${app.ai.model.api-token:}")
+    private String apiToken;
+
     @Bean("voltforgeAiWebClient")
     public WebClient voltforgeAiWebClient() {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(timeoutSeconds));
 
-        return WebClient.builder()
+        WebClient.Builder builder = WebClient.builder()
                 .baseUrl(modelUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-                .build();
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024));
+        addPrivateServiceToken(builder);
+        return builder.build();
     }
 
     /** Longer timeout for SSE streaming connections (token-by-token chat). */
@@ -38,10 +42,17 @@ public class VoltforgeAiConfig {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(60));
 
-        return WebClient.builder()
+        WebClient.Builder builder = WebClient.builder()
                 .baseUrl(modelUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-                .build();
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024));
+        addPrivateServiceToken(builder);
+        return builder.build();
+    }
+
+    private void addPrivateServiceToken(WebClient.Builder builder) {
+        if (apiToken != null && !apiToken.isBlank()) {
+            builder.defaultHeader("X-Voltforge-AI-Token", apiToken);
+        }
     }
 }

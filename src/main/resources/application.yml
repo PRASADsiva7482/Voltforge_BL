@@ -18,7 +18,7 @@ spring:
   datasource:
     url: ${VOLTFORGE_DB_URL:jdbc:mysql://100.73.197.23:3306/voltforge_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8}
     username: ${VOLTFORGE_DB_USERNAME:root}
-    password: ${VOLTFORGE_DB_PASSWORD:SIva@7482}
+    password: ${VOLTFORGE_DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
@@ -109,6 +109,8 @@ app:
     model:
       url: ${VOLTFORGE_AI_URL:http://127.0.0.1:2002/voltForge-ai}
       timeout: 15
+      # Private backend-to-AI credential. It is never returned to the browser.
+      api-token: ${VOLTFORGE_AI_API_TOKEN:}
   simulation:
     compiler:
       # REMOTE posts { sketch, fqbn, boardType } to a compiler service.

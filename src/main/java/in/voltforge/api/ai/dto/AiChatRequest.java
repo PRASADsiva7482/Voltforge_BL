@@ -2,6 +2,7 @@ package in.voltforge.api.ai.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,7 +19,14 @@ import java.util.Map;
 public class AiChatRequest {
 
     @NotBlank(message = "Message is required")
+    @Size(max = 6000, message = "Message must not exceed 6000 characters")
     private String message;
+
+    @Size(max = 80)
+    private String sessionId;
+
+    @Size(max = 80)
+    private String projectId;
 
     private String context; // optional context (current code, canvas state, etc.)
 
@@ -39,6 +47,10 @@ public class AiChatRequest {
     private Map<String, Object> simulationState;
 
     private List<ChatMessage> history;
+
+    /** Bounded firmware context; the Python service performs the final size validation. */
+    @Size(max = 20)
+    private List<Map<String, Object>> files;
 
     @Data
     @Builder

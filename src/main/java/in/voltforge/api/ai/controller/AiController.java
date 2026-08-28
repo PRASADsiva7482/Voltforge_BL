@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -56,7 +57,7 @@ public class AiController {
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "Streaming chat with VoltForge AI — SSE token-by-token with thinking")
-    public Flux<String> chatStream(@RequestBody AiChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody AiChatRequest request) {
         return aiService.chatStream(request);
     }
 

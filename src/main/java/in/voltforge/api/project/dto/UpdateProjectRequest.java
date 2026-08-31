@@ -22,6 +22,13 @@ public class UpdateProjectRequest {
     @Size(max = 5000, message = "Description must not exceed 5000 characters")
     private String description;
 
+    /**
+     * Optional optimistic-concurrency token returned as Project.updatedAt.
+     * Legacy callers may omit it; editor saves send it to prevent lost work.
+     */
+    @Size(max = 64, message = "Expected revision must not exceed 64 characters")
+    private String expectedRevision;
+
     private BoardType boardType;
 
     private Map<String, Object> canvasLayout;

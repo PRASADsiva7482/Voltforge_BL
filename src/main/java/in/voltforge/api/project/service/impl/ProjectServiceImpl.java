@@ -2,6 +2,7 @@ package in.voltforge.api.project.service.impl;
 
 import in.voltforge.api.common.dto.PagedResponse;
 import in.voltforge.api.common.enums.BoardType;
+import in.voltforge.api.common.exception.ConflictException;
 import in.voltforge.api.common.exception.ForbiddenException;
 import in.voltforge.api.common.exception.ResourceNotFoundException;
 import in.voltforge.api.project.dto.*;
@@ -159,6 +160,17 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     @Transactional(readOnly = true)
+    public String getProjectRevision(String projectId, String keycloakId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+        if (!canAccessProject(projectId, keycloakId)) {
+            throw new ForbiddenException("Access denied to project");
+        }
+        return project.getUpdatedAt() != null ? project.getUpdatedAt().toString() : null;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean canEditProject(String projectId, String keycloakId) {
         if (keycloakId == null || keycloakId.isBlank()) {
             return false;
@@ -189,6 +201,15 @@ public class ProjectServiceImpl implements ProjectService {
 
         if (!project.getOwner().getId().equals(user.getId())) {
             throw new ForbiddenException("You are not the owner of this project");
+        }
+
+        if (request.getExpectedRevision() != null
+                && !request.getExpectedRevision().isBlank()
+                && (project.getUpdatedAt() == null
+                || !request.getExpectedRevision().equals(project.getUpdatedAt().toString()))) {
+            throw new ConflictException(
+                    "PROJECT_REVISION_STALE",
+                    "The project changed since this editor state was loaded. Reload it before saving.");
         }
 
         if (request.getName() != null) project.setName(request.getName());

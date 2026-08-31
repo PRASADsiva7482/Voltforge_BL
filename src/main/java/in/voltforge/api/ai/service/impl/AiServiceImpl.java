@@ -5,8 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import in.voltforge.api.ai.dto.*;
+import in.voltforge.api.ai.gateway.AiGatewayException;
+import in.voltforge.api.ai.gateway.AiGatewayPolicy;
+import in.voltforge.api.ai.gateway.AiRequestAdmission;
+import in.voltforge.api.ai.observability.AiTelemetry;
 import in.voltforge.api.ai.service.AiService;
 import in.voltforge.api.config.VoltforgeAiConfig;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
@@ -14,11 +19,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 
 /**
  * Delegates VoltForge AI requests to the standalone Python AI microservice.
@@ -31,15 +39,46 @@ public class AiServiceImpl implements AiService {
     private final WebClient voltforgeAiStreamingClient;
     private final VoltforgeAiConfig aiConfig;
     private final ObjectMapper objectMapper;
+    private final AiGatewayPolicy gatewayPolicy;
+    private final AiRequestAdmission requestAdmission;
+    private final AiTelemetry telemetry;
 
+    @Autowired
     public AiServiceImpl(@Qualifier("voltforgeAiWebClient") WebClient voltforgeAiWebClient,
                          @Qualifier("voltforgeAiStreamingClient") WebClient voltforgeAiStreamingClient,
                          VoltforgeAiConfig aiConfig,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         AiGatewayPolicy gatewayPolicy,
+                         AiRequestAdmission requestAdmission,
+                         AiTelemetry telemetry) {
         this.voltforgeAiWebClient = voltforgeAiWebClient;
         this.voltforgeAiStreamingClient = voltforgeAiStreamingClient;
         this.aiConfig = aiConfig;
         this.objectMapper = objectMapper;
+        this.gatewayPolicy = gatewayPolicy;
+        this.requestAdmission = requestAdmission;
+        this.telemetry = telemetry;
+    }
+
+    /** Compatibility constructor for focused tests with explicit gateway collaborators. */
+    public AiServiceImpl(WebClient voltforgeAiWebClient,
+                         WebClient voltforgeAiStreamingClient,
+                         VoltforgeAiConfig aiConfig,
+                         ObjectMapper objectMapper,
+                         AiGatewayPolicy gatewayPolicy,
+                         AiRequestAdmission requestAdmission) {
+        this(voltforgeAiWebClient, voltforgeAiStreamingClient, aiConfig, objectMapper,
+                gatewayPolicy, requestAdmission, new AiTelemetry());
+    }
+
+    /** Compatibility constructor for focused unit tests and lightweight embedders. */
+    public AiServiceImpl(WebClient voltforgeAiWebClient,
+                         WebClient voltforgeAiStreamingClient,
+                         VoltforgeAiConfig aiConfig,
+                         ObjectMapper objectMapper) {
+        this(voltforgeAiWebClient, voltforgeAiStreamingClient, aiConfig, objectMapper,
+                new AiGatewayPolicy(objectMapper, aiConfig), new AiRequestAdmission(aiConfig),
+                new AiTelemetry());
     }
 
     @Override
@@ -63,10 +102,10 @@ public class AiServiceImpl implements AiService {
                     .confidence(readDouble(data, "confidence"))
                     .build();
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI suggestWiring request failed (errorType={})", e.getClass().getSimpleName());
             return AiGenerateResponse.builder()
                     .status("ERROR")
-                    .message("AI microservice error: " + e.getMessage())
+                    .message("VoltForge AI is temporarily unavailable. Please try again.")
                     .wireSuggestions(Collections.emptyList())
                     .build();
         }
@@ -81,49 +120,49 @@ public class AiServiceImpl implements AiService {
     @Override
     public AiChatResponse chat(AiChatRequest request) {
         log.info("Delegating chat to VoltForge AI microservice");
+        gatewayPolicy.validateChatRequest(request);
         try {
-            List<Map<String, String>> history = new ArrayList<>();
-            if (request.getHistory() != null) {
-                for (var msg : request.getHistory()) {
-                    history.add(Map.of(
-                            "role", nullToEmpty(msg.getRole()),
-                            "content", nullToEmpty(msg.getContent())
-                    ));
-                }
-            }
-
-            Map<String, Object> requestBody = new LinkedHashMap<>();
-            requestBody.put("message", request.getMessage());
-            requestBody.put("context", request.getContext() != null ? request.getContext() : "");
-            requestBody.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
-            requestBody.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
-            requestBody.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
-            requestBody.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());
-            requestBody.put("netlist", request.getNetlist() != null ? request.getNetlist() : Collections.emptyMap());
-            requestBody.put("code", defaultString(request.getCode(), ""));
-            requestBody.put("canvasData", request.getCanvasData() != null ? request.getCanvasData() : Collections.emptyMap());
-            requestBody.put("simulationState", request.getSimulationState() != null ? request.getSimulationState() : Collections.emptyMap());
-            requestBody.put("history", history);
-
-            JsonNode data = post("/api/v1/model/chat", requestBody);
+            ensureChatSession(request);
+            JsonNode data = postChat("/api/v1/model/chat", buildChatBody(request), request);
 
             return AiChatResponse.builder()
+                    .schemaVersion(data.path("schemaVersion").asInt(1))
+                    .contractVersion(data.path("contractVersion").asText("1.0.0"))
+                    .requestId(readNullableText(data, "requestId"))
+                    .sessionId(readNullableText(data, "sessionId"))
+                    .projectRevision(readNullableText(data, "projectRevision"))
+                    .model(readNullableText(data, "model"))
+                    .mode(readNullableText(data, "mode"))
+                    .artifact(readMap(data, "artifact"))
+                    .readiness(readMap(data, "readiness"))
                     .reply(data.path("reply").asText("Unable to process query."))
                     .generatedCode(readNullableText(data, "generatedCode"))
                     .hasCode(data.path("hasCode").asBoolean(false))
                     .confidence(readDouble(data, "confidence"))
-                    .citations(readStringMapList(data, "citations"))
+                    .citations(readMapList(data, "citations"))
                     .wireSuggestions(parseWireSuggestions(data))
                     .additions(readMapList(data, "additions"))
                     .removals(readMapList(data, "removals"))
                     .valueChanges(readMapList(data, "valueChanges"))
                     .codeFixes(readMapList(data, "codeFixes"))
+                    .engineeringAuthorityActive(data.path("engineeringAuthorityActive").isBoolean()
+                            ? data.path("engineeringAuthorityActive").asBoolean() : null)
+                    .engineeringAuthority(readMap(data, "engineeringAuthority"))
+                    .engineeringFindings(readMapList(data, "engineeringFindings"))
+                    .omittedEngineeringFindingCount(data.path("omittedEngineeringFindingCount").isInt()
+                            ? data.path("omittedEngineeringFindingCount").asInt() : null)
+                    .localRetrieval(readMap(data, "localRetrieval"))
+                    .internetRetrieval(readMap(data, "internetRetrieval"))
+                    .grounding(readMap(data, "grounding"))
+                    .memory(readMap(data, "memory"))
                     .build();
 
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI chat request failed (errorType={})", e.getClass().getSimpleName());
             return AiChatResponse.builder()
-                    .reply("AI microservice is offline or encountered an error: " + e.getMessage())
+                    .reply("VoltForge AI is temporarily unavailable. Your project was not changed.")
+                    .sessionId(request.getSessionId())
+                    .projectRevision(request.getProjectRevision())
                     .hasCode(false)
                     .confidence(0.0)
                     .citations(Collections.emptyList())
@@ -139,26 +178,114 @@ public class AiServiceImpl implements AiService {
     @Override
     public Flux<ServerSentEvent<String>> chatStream(AiChatRequest request) {
         log.info("Delegating streaming chat to VoltForge AI microservice");
-        Map<String, Object> requestBody = buildChatBody(request);
+        ensureChatSession(request);
+        String requestId = "gateway-" + UUID.randomUUID();
+        return Flux.defer(() -> {
+            AiTelemetry.Observation observation = telemetry.start("chat.stream");
+            AiRequestAdmission.Lease lease = null;
+            try {
+                gatewayPolicy.validateChatRequest(request);
+                AiRequestAdmission.Lease acquiredLease = requestAdmission.acquireStreaming(
+                        request.getAuthenticatedUserId(), request.getProjectId());
+                lease = acquiredLease;
+                Map<String, Object> requestBody = buildChatBody(request);
+                WebClient.RequestBodySpec requestSpec = voltforgeAiStreamingClient.post()
+                        .uri("/api/v1/model/chat/stream")
+                        .header("X-Voltforge-Request-Id", requestId)
+                        .contentType(MediaType.APPLICATION_JSON);
+                addMemoryIdentityHeaders(requestSpec, request.getAuthenticatedUserId(),
+                        request.getProjectId(), request.getSessionId());
+                return requestSpec
+                        .bodyValue(requestBody)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .retrieve()
+                        // bodyToFlux is deliberately returned directly. Reactor
+                        // cancellation closes the upstream HTTP response.
+                        .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
+                        .doOnNext(event -> telemetry.observeStreamEvent(
+                                observation,
+                                event.event(),
+                                event.data() == null ? 0 : event.data().getBytes(StandardCharsets.UTF_8).length))
+                        .doOnCancel(() -> {
+                            telemetry.finish(observation, "cancelled");
+                            log.debug("AI stream cancelled by gateway client (requestId={})", requestId);
+                        })
+                        .doFinally(signal -> {
+                            telemetry.finish(observation, streamOutcome(signal));
+                            acquiredLease.close();
+                        })
+                        .onErrorResume(error -> {
+                            log.error("AI streaming request failed (requestId={}, errorType={})",
+                                    requestId, error.getClass().getSimpleName());
+                            return Flux.just(gatewayErrorEvent(request, requestId, error));
+                        });
+            } catch (RuntimeException error) {
+                if (lease != null) {
+                    lease.close();
+                }
+                telemetry.finish(observation,
+                        error instanceof AiGatewayException gatewayError
+                                && gatewayError.getStatus() == org.springframework.http.HttpStatus.TOO_MANY_REQUESTS
+                                ? "rejected" : "failure");
+                return Flux.just(gatewayErrorEvent(request, requestId, error));
+            }
+        }).onErrorResume(error -> Flux.just(gatewayErrorEvent(request, requestId, error)));
+    }
 
-        return voltforgeAiStreamingClient.post()
-                .uri("/api/v1/model/chat/stream")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(requestBody)
-                .accept(MediaType.TEXT_EVENT_STREAM)
-                .retrieve()
-                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
-                .onErrorResume(e -> {
-                    log.error("Streaming chat error: {}", e.getMessage(), e);
-                    ObjectNode payload = objectMapper.createObjectNode();
-                    payload.put("type", "error");
-                    payload.put("code", "AI_GATEWAY_STREAM_FAILED");
-                    payload.put("message", "The AI gateway could not continue the response.");
-                    payload.put("retryable", true);
-                    return Flux.just(ServerSentEvent.<String>builder(payload.toString())
-                            .event("error")
-                            .build());
-                });
+    private String streamOutcome(SignalType signal) {
+        if (signal == SignalType.CANCEL) {
+            return "cancelled";
+        }
+        if (signal == SignalType.ON_ERROR) {
+            return "failure";
+        }
+        return "success";
+    }
+
+    private ServerSentEvent<String> gatewayErrorEvent(AiChatRequest request, String requestId, Throwable error) {
+        String code = "AI_GATEWAY_STREAM_FAILED";
+        String message = "The VoltForge AI response could not continue.";
+        boolean retryable = true;
+        if (error instanceof AiGatewayException gatewayError) {
+            code = gatewayError.getErrorCode();
+            message = gatewayError.getMessage();
+            retryable = gatewayError.isRetryable();
+        }
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("schemaVersion", 1);
+        payload.put("contractVersion", "1.0.0");
+        payload.put("type", "error");
+        payload.put("eventId", "event:v1:" + requestId + ":0");
+        payload.put("sequence", 0);
+        payload.put("requestId", requestId);
+        payload.put("sessionId", contractToken(request != null ? request.getSessionId() : null, "session:unknown"));
+        payload.put("projectRevision", contractToken(request != null ? request.getProjectRevision() : null, "client:unbound"));
+        payload.put("model", "voltforge-local-engine-v1");
+        payload.put("mode", "unavailable");
+        ObjectNode artifact = payload.putObject("artifact");
+        artifact.put("artifactVersion", "gateway-unavailable-v1");
+        artifact.put("runtimeState", "unavailable");
+        artifact.put("ready", false);
+
+        ObjectNode eventPayload = payload.putObject("payload");
+        eventPayload.put("type", "error");
+        eventPayload.put("code", code);
+        eventPayload.put("message", message);
+        eventPayload.put("retryable", retryable);
+        // Keep the temporary flat shape consumed by older UI clients.
+        payload.put("code", code);
+        payload.put("message", message);
+        payload.put("retryable", retryable);
+        return ServerSentEvent.<String>builder(payload.toString()).event("error").build();
+    }
+
+    private String contractToken(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        String token = value.replaceAll("[^A-Za-z0-9._:@/+\\-]", "_");
+        return token.length() >= 3 ? token.substring(0, Math.min(token.length(), 160)) : fallback;
     }
 
     private Map<String, Object> buildChatBody(AiChatRequest request) {
@@ -172,9 +299,12 @@ public class AiServiceImpl implements AiService {
             }
         }
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("schemaVersion", 1);
+        body.put("contractVersion", "1.0.0");
         body.put("message", request.getMessage());
         body.put("sessionId", request.getSessionId());
         body.put("projectId", request.getProjectId());
+        body.put("projectRevision", request.getProjectRevision());
         body.put("context", request.getContext() != null ? request.getContext() : "");
         body.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
         body.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
@@ -186,7 +316,58 @@ public class AiServiceImpl implements AiService {
         body.put("simulationState", request.getSimulationState() != null ? request.getSimulationState() : Collections.emptyMap());
         body.put("history", history);
         body.put("files", request.getFiles() != null ? request.getFiles() : Collections.emptyList());
+        body.put("diagnostics", request.getDiagnostics() != null ? request.getDiagnostics() : Collections.emptyList());
+        // Browser/client memory is never trusted. The Python service loads only
+        // entries bound to the authenticated identity headers below.
+        body.put("memory", Collections.emptyList());
+        body.put("retrievedEvidence", request.getRetrievedEvidence() != null ? request.getRetrievedEvidence() : Collections.emptyList());
         return body;
+    }
+
+    @Override
+    public Map<String, Object> inspectMemory(String userId, String projectId, String sessionId, String projectRevision) {
+        String uri = "/api/v1/model/memory";
+        if (projectRevision != null && !projectRevision.isBlank()) {
+            uri += "?projectRevision=" + encodeQuery(projectRevision);
+        }
+        return memoryRequest(HttpMethod.GET, uri, null, userId, projectId, sessionId);
+    }
+
+    @Override
+    public Map<String, Object> setMemoryPreference(String userId, String projectId, String sessionId,
+                                                    AiMemoryPreferenceRequest request) {
+        return memoryRequest(HttpMethod.PUT, "/api/v1/model/memory/preferences",
+                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                userId, projectId, sessionId);
+    }
+
+    @Override
+    public Map<String, Object> createMemoryEntry(String userId, String projectId, String sessionId,
+                                                 AiMemoryWriteRequest request) {
+        return memoryRequest(HttpMethod.POST, "/api/v1/model/memory/entries",
+                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                userId, projectId, sessionId);
+    }
+
+    @Override
+    public Map<String, Object> correctMemoryEntry(String userId, String projectId, String sessionId,
+                                                  String memoryId, AiMemoryCorrectionRequest request) {
+        return memoryRequest(HttpMethod.PATCH, "/api/v1/model/memory/entries/" + encodePath(memoryId),
+                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                userId, projectId, sessionId);
+    }
+
+    @Override
+    public Map<String, Object> deleteMemoryEntry(String userId, String projectId, String sessionId,
+                                                 String memoryId) {
+        return memoryRequest(HttpMethod.DELETE, "/api/v1/model/memory/entries/" + encodePath(memoryId),
+                null, userId, projectId, sessionId);
+    }
+
+    @Override
+    public Map<String, Object> clearMemory(String userId, String projectId, String sessionId, String scope) {
+        return memoryRequest(HttpMethod.DELETE, "/api/v1/model/memory?scope=" + encodeQuery(scope),
+                null, userId, projectId, sessionId);
     }
 
     @Override
@@ -212,7 +393,7 @@ public class AiServiceImpl implements AiService {
                     .confidence(readDouble(data, "confidence"))
                     .build();
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI code-review request failed (errorType={})", e.getClass().getSimpleName());
             return AiCodeReviewResponse.builder()
                     .summary("AI code review is currently unavailable.")
                     .issues(Collections.emptyList())
@@ -245,10 +426,10 @@ public class AiServiceImpl implements AiService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI schematic-to-code request failed (errorType={})", e.getClass().getSimpleName());
             return AiGenerateResponse.builder()
                     .status("ERROR")
-                    .message("AI microservice error: " + e.getMessage())
+                    .message("VoltForge AI is temporarily unavailable. Please try again.")
                     .generatedCode(generateFallbackCode("schematicToCode"))
                     .confidence(0.0)
                     .build();
@@ -283,7 +464,7 @@ public class AiServiceImpl implements AiService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI circuit-validation request failed (errorType={})", e.getClass().getSimpleName());
             return AiValidatorResponse.builder()
                     .isValid(false)
                     .safetyScore(0)
@@ -300,13 +481,19 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
+    public Map<String, Object> getHardwareCoverage() {
+        JsonNode data = get("/api/v1/model/hardware-coverage");
+        return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+    }
+
+    @Override
     public Map<String, Object> runPcbDrc(PcbManufacturingRequest request) {
         log.info("Delegating PCB DRC to VoltForge AI microservice");
         try {
             JsonNode data = post("/api/v1/model/circuit/drc-check", buildPcbManufacturingBody(request));
             return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
-            log.error("PCB DRC microservice error: {}", e.getMessage(), e);
+            log.error("AI PCB DRC request failed (errorType={})", e.getClass().getSimpleName());
             Map<String, Object> fallback = new LinkedHashMap<>();
             fallback.put("passed", false);
             fallback.put("totalViolations", 1);
@@ -316,7 +503,7 @@ public class AiServiceImpl implements AiService {
                     "id", "drc_service_unavailable",
                     "severity", "ERROR",
                     "rule", "DRC service availability",
-                    "message", "PCB DRC service is unavailable: " + e.getMessage()
+                    "message", "PCB DRC service is unavailable. Please try again."
             )));
             fallback.put("rulesChecked", Collections.emptyList());
             return fallback;
@@ -326,14 +513,21 @@ public class AiServiceImpl implements AiService {
     @Override
     public byte[] exportPcbGerber(PcbManufacturingRequest request) {
         log.info("Delegating PCB Gerber export to VoltForge AI microservice");
-        byte[] response = voltforgeAiWebClient.post()
-                .uri("/api/v1/model/circuit/export-gerber")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(buildPcbManufacturingBody(request))
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
-        return response != null ? response : new byte[0];
+        AiTelemetry.Observation observation = telemetry.start("gerber");
+        try {
+            byte[] response = voltforgeAiWebClient.post()
+                    .uri("/api/v1/model/circuit/export-gerber")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(buildPcbManufacturingBody(request))
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
+            telemetry.finish(observation, "success");
+            return response != null ? response : new byte[0];
+        } catch (RuntimeException error) {
+            telemetry.finish(observation, telemetryOutcome(error));
+            throw error;
+        }
     }
 
     private AiGenerateResponse callGenerateEndpoint(String uri, AiGenerateRequest request, String defaultMessage) {
@@ -353,10 +547,10 @@ public class AiServiceImpl implements AiService {
                     .confidence(readDouble(data, "confidence"))
                     .build();
         } catch (Exception e) {
-            log.error("Error communicating with AI microservice: {}", e.getMessage(), e);
+            log.error("AI generation request failed (errorType={})", e.getClass().getSimpleName());
             return AiGenerateResponse.builder()
                     .status("ERROR")
-                    .message("AI microservice error: " + e.getMessage())
+                    .message("VoltForge AI is temporarily unavailable. Please try again.")
                     .generatedCode(generateFallbackCode(request != null ? request.getPrompt() : ""))
                     .confidence(0.0)
                     .build();
@@ -364,13 +558,117 @@ public class AiServiceImpl implements AiService {
     }
 
     private JsonNode post(String uri, Map<String, Object> requestBody) {
-        JsonNode response = voltforgeAiWebClient.post()
-                .uri(uri)
-                .bodyValue(requestBody)
-                .retrieve()
+        AiTelemetry.Observation observation = telemetry.start(operationForUri(uri));
+        try {
+            JsonNode response = voltforgeAiWebClient.post()
+                    .uri(uri)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
+            telemetry.finish(observation, "success");
+            return unwrapData(response);
+        } catch (RuntimeException error) {
+            telemetry.finish(observation, telemetryOutcome(error));
+            throw error;
+        }
+    }
+
+    private JsonNode get(String uri) {
+        AiTelemetry.Observation observation = telemetry.start(operationForUri(uri));
+        try {
+            JsonNode response = voltforgeAiWebClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
+            telemetry.finish(observation, "success");
+            return unwrapData(response);
+        } catch (RuntimeException error) {
+            telemetry.finish(observation, telemetryOutcome(error));
+            throw error;
+        }
+    }
+
+    private JsonNode postChat(String uri, Map<String, Object> requestBody, AiChatRequest request) {
+        AiTelemetry.Observation observation = telemetry.start("chat.sync");
+        try {
+            WebClient.RequestBodySpec requestSpec = voltforgeAiWebClient.post().uri(uri);
+            addMemoryIdentityHeaders(requestSpec, request.getAuthenticatedUserId(),
+                    request.getProjectId(), request.getSessionId());
+            JsonNode response = requestSpec
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
+            telemetry.finish(observation, "success");
+            return unwrapData(response);
+        } catch (RuntimeException error) {
+            telemetry.finish(observation, telemetryOutcome(error));
+            throw error;
+        }
+    }
+
+    private String operationForUri(String uri) {
+        if (uri == null) {
+            return "other";
+        }
+        if (uri.contains("review-code")) return "review";
+        if (uri.contains("validate-circuit")) return "validation";
+        if (uri.contains("schematic-to-code")) return "schematic";
+        if (uri.contains("drc-check")) return "drc";
+        if (uri.contains("hardware-coverage")) return "hardware-coverage";
+        if (uri.contains("generate-code") || uri.contains("suggest-wiring")) return "generation";
+        return "other";
+    }
+
+    private String telemetryOutcome(Throwable error) {
+        if (error instanceof java.util.concurrent.TimeoutException
+                || error.getClass().getSimpleName().toLowerCase(Locale.ROOT).contains("timeout")) {
+            return "timeout";
+        }
+        if (error instanceof AiGatewayException gatewayError
+                && gatewayError.getStatus() == org.springframework.http.HttpStatus.TOO_MANY_REQUESTS) {
+            return "rejected";
+        }
+        return "failure";
+    }
+
+    private Map<String, Object> memoryRequest(HttpMethod method, String uri,
+                                               Map<String, Object> body,
+                                               String userId, String projectId, String sessionId) {
+        WebClient.RequestBodySpec requestSpec = voltforgeAiWebClient.method(method).uri(uri);
+        addMemoryIdentityHeaders(requestSpec, userId, projectId, sessionId);
+        WebClient.RequestHeadersSpec<?> prepared = body == null
+                ? requestSpec
+                : requestSpec.contentType(MediaType.APPLICATION_JSON).bodyValue(body);
+        JsonNode response = prepared.retrieve()
                 .bodyToMono(JsonNode.class)
                 .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
-        return unwrapData(response);
+        JsonNode value = unwrapData(response);
+        return objectMapper.convertValue(value, new TypeReference<Map<String, Object>>() {});
+    }
+
+    private void addMemoryIdentityHeaders(WebClient.RequestHeadersSpec<?> request,
+                                          String userId, String projectId, String sessionId) {
+        if (userId != null && !userId.isBlank()) request.header("X-Voltforge-User-Id", userId);
+        if (projectId != null && !projectId.isBlank()) request.header("X-Voltforge-Project-Id", projectId);
+        if (sessionId != null && !sessionId.isBlank()) request.header("X-Voltforge-Session-Id", sessionId);
+    }
+
+    private void ensureChatSession(AiChatRequest request) {
+        if (request.getSessionId() == null || request.getSessionId().isBlank()) {
+            request.setSessionId(UUID.randomUUID().toString());
+        }
+    }
+
+    private String encodeQuery(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String encodePath(String value) {
+        return value.replaceAll("[^A-Za-z0-9._:-]", "");
     }
 
     private JsonNode unwrapData(JsonNode response) {

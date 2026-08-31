@@ -1,6 +1,7 @@
 package in.voltforge.api.config;
 
 import lombok.Getter;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,13 +16,37 @@ import java.time.Duration;
 public class VoltforgeAiConfig {
 
     @Value("${app.ai.model.url:http://localhost:2002/voltForge-ai}")
-    private String modelUrl;
+    private String modelUrl = "http://localhost:2002/voltForge-ai";
 
     @Value("${app.ai.model.timeout:15}")
-    private int timeoutSeconds;
+    private int timeoutSeconds = 15;
+
+    @Value("${app.ai.model.streaming-timeout:60}")
+    private int streamingTimeoutSeconds = 60;
 
     @Value("${app.ai.model.api-token:}")
-    private String apiToken;
+    private String apiToken = "";
+
+    @Value("${app.ai.environment:development}")
+    private String environment = "development";
+
+    @Value("${app.ai.gateway.max-request-bytes:2000000}")
+    private int maxRequestBytes = 2_000_000;
+
+    @Value("${app.ai.gateway.max-concurrent-streams-per-user:2}")
+    private int maxConcurrentStreamsPerUser = 2;
+
+    @Value("${app.ai.gateway.max-concurrent-streams-per-project:1}")
+    private int maxConcurrentStreamsPerProject = 1;
+
+    @PostConstruct
+    void validateProductionSecurityConfiguration() {
+        if ("production".equalsIgnoreCase(environment)
+                && (apiToken == null || apiToken.trim().length() < 32)) {
+            throw new IllegalStateException(
+                    "app.ai.model.api-token must contain at least 32 characters in production");
+        }
+    }
 
     @Bean("voltforgeAiWebClient")
     public WebClient voltforgeAiWebClient() {
@@ -40,7 +65,7 @@ public class VoltforgeAiConfig {
     @Bean("voltforgeAiStreamingClient")
     public WebClient voltforgeAiStreamingClient() {
         HttpClient httpClient = HttpClient.create()
-                .responseTimeout(Duration.ofSeconds(60));
+                .responseTimeout(Duration.ofSeconds(effectiveStreamingTimeoutSeconds()));
 
         WebClient.Builder builder = WebClient.builder()
                 .baseUrl(modelUrl)
@@ -54,5 +79,9 @@ public class VoltforgeAiConfig {
         if (apiToken != null && !apiToken.isBlank()) {
             builder.defaultHeader("X-Voltforge-AI-Token", apiToken);
         }
+    }
+
+    private int effectiveStreamingTimeoutSeconds() {
+        return Math.max(1, Math.min(streamingTimeoutSeconds, 120));
     }
 }

@@ -106,11 +106,17 @@ app:
     requests-per-minute: 60
     trust-forwarded-headers: false
   ai:
+    environment: ${VOLTFORGE_AI_ENVIRONMENT:development}
     model:
       url: ${VOLTFORGE_AI_URL:http://127.0.0.1:2002/voltForge-ai}
       timeout: 15
+      streaming-timeout: ${VOLTFORGE_AI_STREAMING_TIMEOUT:60}
       # Private backend-to-AI credential. It is never returned to the browser.
       api-token: ${VOLTFORGE_AI_API_TOKEN:}
+    gateway:
+      max-request-bytes: ${VOLTFORGE_AI_MAX_REQUEST_BYTES:2000000}
+      max-concurrent-streams-per-user: ${VOLTFORGE_AI_MAX_STREAMS_PER_USER:2}
+      max-concurrent-streams-per-project: ${VOLTFORGE_AI_MAX_STREAMS_PER_PROJECT:1}
   simulation:
     compiler:
       # REMOTE posts { sketch, fqbn, boardType } to a compiler service.

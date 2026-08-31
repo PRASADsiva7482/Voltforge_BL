@@ -16,6 +16,9 @@ public interface ProjectService {
 
     boolean canAccessProject(String projectId, String keycloakId);
 
+    /** Returns the current optimistic-concurrency revision for an accessible project. */
+    String getProjectRevision(String projectId, String keycloakId);
+
     boolean canEditProject(String projectId, String keycloakId);
 
     void scheduleCanvasLayoutSave(String projectId, String keycloakId,

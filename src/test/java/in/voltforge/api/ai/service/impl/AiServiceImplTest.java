@@ -383,6 +383,38 @@ class AiServiceImplTest {
         }
     }
 
+    @Test
+    void forwardsComponentCoverageAsAReadOnlyTypedMap() throws Exception {
+        AtomicReference<String> receivedToken = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/voltForge-ai/api/v1/model/component-coverage", exchange -> {
+            receivedToken.set(exchange.getRequestHeaders().getFirst("X-Voltforge-AI-Token"));
+            byte[] response = "{\"reportId\":\"vfai-fu-011-ui-component-coverage\",\"entryCount\":60}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            VoltforgeAiConfig config = testConfig(server);
+            AiServiceImpl service = new AiServiceImpl(
+                    config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(),
+                    config, new ObjectMapper());
+
+            Map<String, Object> coverage = service.getComponentCoverage();
+
+            assertThat(coverage)
+                    .containsEntry("reportId", "vfai-fu-011-ui-component-coverage")
+                    .containsEntry("entryCount", 60);
+            assertThat(receivedToken.get()).isEqualTo("private-test-token");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private VoltforgeAiConfig testConfig(HttpServer server) {
         VoltforgeAiConfig config = new VoltforgeAiConfig();
         ReflectionTestUtils.setField(

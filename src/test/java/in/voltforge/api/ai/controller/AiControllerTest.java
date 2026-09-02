@@ -81,6 +81,18 @@ class AiControllerTest {
     }
 
     @Test
+    void exposesComponentCoverageThroughTheAuthenticatedBackendBoundary() {
+        when(aiService.getComponentCoverage()).thenReturn(Map.of(
+                "reportId", "vfai-fu-011-ui-component-coverage",
+                "entryCount", 60));
+
+        assertThat(controller.componentCoverage().getBody().getData())
+                .containsEntry("reportId", "vfai-fu-011-ui-component-coverage")
+                .containsEntry("entryCount", 60);
+        verify(aiService).getComponentCoverage();
+    }
+
+    @Test
     void rejectsAStaleProjectRevisionBeforeForwardingContext() {
         when(projectService.canAccessProject("project-027", "user-027")).thenReturn(true);
         when(projectService.getProjectRevision("project-027", "user-027")).thenReturn("revision-current");

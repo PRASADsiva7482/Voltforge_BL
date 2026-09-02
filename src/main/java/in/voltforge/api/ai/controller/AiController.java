@@ -82,6 +82,13 @@ public class AiController {
                 aiService.getHardwareCoverage()));
     }
 
+    @GetMapping("/component-coverage")
+    @Operation(summary = "Get fail-closed AI component coverage")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> componentCoverage() {
+        return ResponseEntity.ok(ApiResponse.success("AI component coverage loaded",
+                aiService.getComponentCoverage()));
+    }
+
     @GetMapping("/memory")
     @Operation(summary = "Inspect bounded AI memory for the authenticated project scope")
     public ResponseEntity<ApiResponse<Map<String, Object>>> inspectMemory(

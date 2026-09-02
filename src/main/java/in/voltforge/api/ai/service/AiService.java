@@ -39,6 +39,8 @@ public interface AiService {
 
     Map<String, Object> getHardwareCoverage();
 
+    Map<String, Object> getComponentCoverage();
+
     Map<String, Object> runPcbDrc(PcbManufacturingRequest request);
 
     byte[] exportPcbGerber(PcbManufacturingRequest request);

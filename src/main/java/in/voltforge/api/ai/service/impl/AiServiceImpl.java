@@ -487,6 +487,12 @@ public class AiServiceImpl implements AiService {
     }
 
     @Override
+    public Map<String, Object> getComponentCoverage() {
+        JsonNode data = get("/api/v1/model/component-coverage");
+        return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+    }
+
+    @Override
     public Map<String, Object> runPcbDrc(PcbManufacturingRequest request) {
         log.info("Delegating PCB DRC to VoltForge AI microservice");
         try {
@@ -619,6 +625,7 @@ public class AiServiceImpl implements AiService {
         if (uri.contains("schematic-to-code")) return "schematic";
         if (uri.contains("drc-check")) return "drc";
         if (uri.contains("hardware-coverage")) return "hardware-coverage";
+        if (uri.contains("component-coverage")) return "component-coverage";
         if (uri.contains("generate-code") || uri.contains("suggest-wiring")) return "generation";
         return "other";
     }

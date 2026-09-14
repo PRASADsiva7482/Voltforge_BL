@@ -36,6 +36,7 @@ public class SecurityConfig {
             "/actuator/health",
             "/actuator/info",
             "/api/v1/auth/health",
+            "/api/v1/auth/identity-health",
             "/api/v1/projects/public/**",
             // The HTTP handshake cannot carry the STOMP Authorization header
             // in every browser/SockJS client. Authentication is enforced on

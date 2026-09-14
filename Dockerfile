@@ -1,12 +1,11 @@
-FROM eclipse-temurin:17-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /app
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw dependency:resolve
+COPY pom.xml ./
+RUN mvn --batch-mode --no-transfer-progress dependency:go-offline
 COPY src/ src/
-RUN ./mvnw clean package -DskipTests
+RUN mvn --batch-mode --no-transfer-progress clean verify
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S voltforge && adduser -S voltforge -G voltforge
 COPY --from=builder /app/target/*.jar app.jar

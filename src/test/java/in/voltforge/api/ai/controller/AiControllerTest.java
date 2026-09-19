@@ -1,6 +1,6 @@
 package in.voltforge.api.ai.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import in.voltforge.api.ai.dto.AiChatRequest;
 import in.voltforge.api.ai.dto.AiChatResponse;
 import in.voltforge.api.ai.gateway.AiGatewayException;
@@ -30,7 +30,7 @@ class AiControllerTest {
         aiService = mock(AiService.class);
         projectService = mock(ProjectService.class);
         controller = new AiController(aiService, projectService,
-                new AiGatewayPolicy(new ObjectMapper(), new VoltforgeAiConfig()));
+                new AiGatewayPolicy(new JsonMapper(), new VoltforgeAiConfig()));
     }
 
     @Test

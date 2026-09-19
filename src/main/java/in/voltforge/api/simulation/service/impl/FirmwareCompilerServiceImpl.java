@@ -1,7 +1,7 @@
 package in.voltforge.api.simulation.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import in.voltforge.api.common.enums.BoardType;
 import in.voltforge.api.simulation.dto.FirmwareCompileRequest;
 import in.voltforge.api.simulation.dto.FirmwareCompileResponse;
@@ -96,7 +96,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
 
             Map.entry(BoardType.ATMEL_AVR_ATTINY, target("ATTinyCore:avr:attinyx5")));
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
 
     @Value("${app.simulation.compiler.mode:REMOTE}")
@@ -276,7 +276,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
 
     private String textOrEmpty(JsonNode root, String field) {
         JsonNode node = root.get(field);
-        return node == null || node.isNull() ? "" : node.asText("");
+        return node == null || node.isNull() ? "" : node.asString("");
     }
 
     private List<String> toDiagnostics(String stdout, String stderr) {

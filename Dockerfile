@@ -1,11 +1,11 @@
-FROM maven:3.9-eclipse-temurin-21-alpine AS builder
+FROM maven:3.9-eclipse-temurin-25-alpine AS builder
 WORKDIR /app
 COPY pom.xml ./
 RUN mvn --batch-mode --no-transfer-progress dependency:go-offline
 COPY src/ src/
 RUN mvn --batch-mode --no-transfer-progress clean verify
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 RUN addgroup -S voltforge && adduser -S voltforge -G voltforge
 COPY --from=builder /app/target/*.jar app.jar

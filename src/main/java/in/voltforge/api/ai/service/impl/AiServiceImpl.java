@@ -1,9 +1,9 @@
 package in.voltforge.api.ai.service.impl;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import in.voltforge.api.ai.dto.*;
 import in.voltforge.api.ai.gateway.AiGatewayException;
 import in.voltforge.api.ai.gateway.AiGatewayPolicy;
@@ -38,7 +38,7 @@ public class AiServiceImpl implements AiService {
     private final WebClient voltforgeAiWebClient;
     private final WebClient voltforgeAiStreamingClient;
     private final VoltforgeAiConfig aiConfig;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final AiGatewayPolicy gatewayPolicy;
     private final AiRequestAdmission requestAdmission;
     private final AiTelemetry telemetry;
@@ -47,7 +47,7 @@ public class AiServiceImpl implements AiService {
     public AiServiceImpl(@Qualifier("voltforgeAiWebClient") WebClient voltforgeAiWebClient,
                          @Qualifier("voltforgeAiStreamingClient") WebClient voltforgeAiStreamingClient,
                          VoltforgeAiConfig aiConfig,
-                         ObjectMapper objectMapper,
+                         JsonMapper objectMapper,
                          AiGatewayPolicy gatewayPolicy,
                          AiRequestAdmission requestAdmission,
                          AiTelemetry telemetry) {
@@ -64,7 +64,7 @@ public class AiServiceImpl implements AiService {
     public AiServiceImpl(WebClient voltforgeAiWebClient,
                          WebClient voltforgeAiStreamingClient,
                          VoltforgeAiConfig aiConfig,
-                         ObjectMapper objectMapper,
+                         JsonMapper objectMapper,
                          AiGatewayPolicy gatewayPolicy,
                          AiRequestAdmission requestAdmission) {
         this(voltforgeAiWebClient, voltforgeAiStreamingClient, aiConfig, objectMapper,
@@ -75,7 +75,7 @@ public class AiServiceImpl implements AiService {
     public AiServiceImpl(WebClient voltforgeAiWebClient,
                          WebClient voltforgeAiStreamingClient,
                          VoltforgeAiConfig aiConfig,
-                         ObjectMapper objectMapper) {
+                         JsonMapper objectMapper) {
         this(voltforgeAiWebClient, voltforgeAiStreamingClient, aiConfig, objectMapper,
                 new AiGatewayPolicy(objectMapper, aiConfig), new AiRequestAdmission(aiConfig),
                 new AiTelemetry());
@@ -93,8 +93,8 @@ public class AiServiceImpl implements AiService {
         try {
             JsonNode data = post("/api/v1/model/suggest-wiring", buildGenerateBody(request));
             return AiGenerateResponse.builder()
-                    .status(data.path("status").asText("SUCCESS"))
-                    .message(data.path("message").asText("Wiring suggestions generated successfully."))
+                    .status(data.path("status").asString("SUCCESS"))
+                    .message(data.path("message").asString("Wiring suggestions generated successfully."))
                     .wireSuggestions(parseWireSuggestions(data))
                     .additions(readMapList(data, "additions"))
                     .removals(readMapList(data, "removals"))
@@ -127,7 +127,7 @@ public class AiServiceImpl implements AiService {
 
             return AiChatResponse.builder()
                     .schemaVersion(data.path("schemaVersion").asInt(1))
-                    .contractVersion(data.path("contractVersion").asText("1.0.0"))
+                    .contractVersion(data.path("contractVersion").asString("1.0.0"))
                     .requestId(readNullableText(data, "requestId"))
                     .sessionId(readNullableText(data, "sessionId"))
                     .projectRevision(readNullableText(data, "projectRevision"))
@@ -135,7 +135,7 @@ public class AiServiceImpl implements AiService {
                     .mode(readNullableText(data, "mode"))
                     .artifact(readMap(data, "artifact"))
                     .readiness(readMap(data, "readiness"))
-                    .reply(data.path("reply").asText("Unable to process query."))
+                    .reply(data.path("reply").asString("Unable to process query."))
                     .generatedCode(readNullableText(data, "generatedCode"))
                     .hasCode(data.path("hasCode").asBoolean(false))
                     .confidence(readDouble(data, "confidence"))
@@ -385,10 +385,10 @@ public class AiServiceImpl implements AiService {
 
             JsonNode data = post("/api/v1/model/review-code", requestBody);
             return AiCodeReviewResponse.builder()
-                    .summary(data.path("summary").asText("Code review completed."))
+                    .summary(data.path("summary").asString("Code review completed."))
                     .issues(parseReviewIssues(data))
                     .suggestions(readStringList(data, "suggestions"))
-                    .improvedCode(data.path("improvedCode").asText(defaultString(request.getCode(), "")))
+                    .improvedCode(data.path("improvedCode").asString(defaultString(request.getCode(), "")))
                     .score(data.path("score").asInt(100))
                     .confidence(readDouble(data, "confidence"))
                     .build();
@@ -418,9 +418,9 @@ public class AiServiceImpl implements AiService {
 
             JsonNode data = post("/api/v1/model/schematic-to-code", requestBody);
             return AiGenerateResponse.builder()
-                    .status(data.path("status").asText("SUCCESS"))
-                    .message(data.path("message").asText("Code generated successfully from schematic layout."))
-                    .generatedCode(data.path("generatedCode").asText(""))
+                    .status(data.path("status").asString("SUCCESS"))
+                    .message(data.path("message").asString("Code generated successfully from schematic layout."))
+                    .generatedCode(data.path("generatedCode").asString(""))
                     .confidence(readDouble(data, "confidence"))
                     .citations(readStringMapList(data, "citations"))
                     .build();
@@ -454,7 +454,7 @@ public class AiServiceImpl implements AiService {
                     .isValid(data.path("isValid").asBoolean(true))
                     .safetyScore(data.path("safetyScore").asInt(100))
                     .issues(parseValidationIssues(data))
-                    .generalFeedback(data.path("generalFeedback").asText(""))
+                    .generalFeedback(data.path("generalFeedback").asString(""))
                     .additions(readMapList(data, "additions"))
                     .removals(readMapList(data, "removals"))
                     .valueChanges(readMapList(data, "valueChanges"))
@@ -540,12 +540,12 @@ public class AiServiceImpl implements AiService {
         try {
             JsonNode data = post(uri, buildGenerateBody(request));
             return AiGenerateResponse.builder()
-                    .status(data.path("status").asText("SUCCESS"))
-                    .message(data.path("message").asText(defaultMessage))
+                    .status(data.path("status").asString("SUCCESS"))
+                    .message(data.path("message").asString(defaultMessage))
                     .canvasLayout(readMap(data, "canvasLayout"))
                     .componentConfig(readMap(data, "componentConfig"))
                     .wireSuggestions(parseWireSuggestions(data))
-                    .generatedCode(data.path("generatedCode").asText(""))
+                    .generatedCode(data.path("generatedCode").asString(""))
                     .additions(readMapList(data, "additions"))
                     .removals(readMapList(data, "removals"))
                     .codeFixes(readMapList(data, "codeFixes"))
@@ -736,12 +736,12 @@ public class AiServiceImpl implements AiService {
         List<AiWireSuggestion> suggestions = new ArrayList<>();
         for (JsonNode node : suggestionsNode) {
             suggestions.add(AiWireSuggestion.builder()
-                    .fromComponentId(node.path("fromComponentId").asText())
-                    .fromPin(node.path("fromPin").asText())
-                    .toComponentId(node.path("toComponentId").asText())
-                    .toPin(node.path("toPin").asText())
-                    .color(node.path("color").asText("#3b82f6"))
-                    .description(node.path("description").asText())
+                    .fromComponentId(node.path("fromComponentId").asString())
+                    .fromPin(node.path("fromPin").asString())
+                    .toComponentId(node.path("toComponentId").asString())
+                    .toPin(node.path("toPin").asString())
+                    .color(node.path("color").asString("#3b82f6"))
+                    .description(node.path("description").asString())
                     .build());
         }
         return suggestions;
@@ -755,10 +755,10 @@ public class AiServiceImpl implements AiService {
         List<AiValidatorResponse.ValidationIssue> issues = new ArrayList<>();
         for (JsonNode node : issuesNode) {
             issues.add(AiValidatorResponse.ValidationIssue.builder()
-                    .severity(node.path("severity").asText("INFO"))
-                    .componentId(node.path("componentId").asText(""))
-                    .message(node.path("message").asText(""))
-                    .suggestedFix(node.path("suggestedFix").asText(""))
+                    .severity(node.path("severity").asString("INFO"))
+                    .componentId(node.path("componentId").asString(""))
+                    .message(node.path("message").asString(""))
+                    .suggestedFix(node.path("suggestedFix").asString(""))
                     .build());
         }
         return issues;
@@ -772,10 +772,10 @@ public class AiServiceImpl implements AiService {
         List<AiCodeReviewResponse.ReviewIssue> issues = new ArrayList<>();
         for (JsonNode node : issuesNode) {
             issues.add(AiCodeReviewResponse.ReviewIssue.builder()
-                    .severity(node.path("severity").asText("INFO"))
+                    .severity(node.path("severity").asString("INFO"))
                     .line(node.path("line").asInt(1))
-                    .message(node.path("message").asText(""))
-                    .fix(node.path("fix").asText(""))
+                    .message(node.path("message").asString(""))
+                    .fix(node.path("fix").asString(""))
                     .build());
         }
         return issues;
@@ -820,7 +820,7 @@ public class AiServiceImpl implements AiService {
         }
         List<String> values = new ArrayList<>();
         for (JsonNode item : node) {
-            values.add(item.asText());
+            values.add(item.asString());
         }
         return values;
     }
@@ -832,7 +832,7 @@ public class AiServiceImpl implements AiService {
 
     private String readNullableText(JsonNode data, String field) {
         JsonNode node = data.get(field);
-        return node == null || node.isNull() ? null : node.asText();
+        return node == null || node.isNull() ? null : node.asString();
     }
 
     private String defaultString(String value, String fallback) {

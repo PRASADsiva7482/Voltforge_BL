@@ -1,6 +1,6 @@
 package in.voltforge.api.ai.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.sun.net.httpserver.HttpServer;
 import in.voltforge.api.ai.dto.AiChatRequest;
 import in.voltforge.api.ai.dto.AiChatResponse;
@@ -52,7 +52,7 @@ class AiServiceImplTest {
             VoltforgeAiConfig config = testConfig(server);
             AiServiceImpl service = new AiServiceImpl(
                     config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(), config,
-                    new ObjectMapper());
+                    new JsonMapper());
             AiChatRequest request = AiChatRequest.builder()
                     .message("Explain the circuit")
                     .authenticatedUserId("jwt-user-027")
@@ -103,7 +103,7 @@ class AiServiceImplTest {
             AiRequestAdmission admission = new AiRequestAdmission(config);
             AiServiceImpl service = new AiServiceImpl(
                     config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(), config,
-                    new ObjectMapper(), new AiGatewayPolicy(new ObjectMapper(), config), admission);
+                    new JsonMapper(), new AiGatewayPolicy(new JsonMapper(), config), admission);
             AiChatRequest request = AiChatRequest.builder()
                     .message("Cancel this")
                     .authenticatedUserId("jwt-user-cancel")
@@ -159,7 +159,7 @@ class AiServiceImplTest {
                     config.voltforgeAiWebClient(),
                     config.voltforgeAiStreamingClient(),
                     config,
-                    new ObjectMapper()
+                    new JsonMapper()
             );
             AiChatRequest request = AiChatRequest.builder()
                     .message("Explain the LED circuit")
@@ -192,7 +192,7 @@ class AiServiceImplTest {
 
     @Test
     void preservesTypedInternetRetrievalMetadata() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
+        JsonMapper mapper = new JsonMapper();
         AiChatResponse response = mapper.readValue(
                 """
                 {
@@ -244,7 +244,7 @@ class AiServiceImplTest {
 
     @Test
     void preservesTypedGroundingAndEvidenceClasses() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
+        JsonMapper mapper = new JsonMapper();
         AiChatResponse response = mapper.readValue(
                 """
                 {
@@ -281,7 +281,7 @@ class AiServiceImplTest {
 
     @Test
     void preservesTypedBoundedMemoryMetadata() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
+        JsonMapper mapper = new JsonMapper();
         AiChatResponse response = mapper.readValue(
                 """
                 {
@@ -335,7 +335,7 @@ class AiServiceImplTest {
             ReflectionTestUtils.setField(config, "apiToken", "private-test-token");
             AiServiceImpl service = new AiServiceImpl(
                     config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(),
-                    config, new ObjectMapper());
+                    config, new JsonMapper());
 
             Map<String, Object> memory = service.inspectMemory(
                     "jwt-user-memory", "project-memory", "session-memory", "revision-1");
@@ -370,7 +370,7 @@ class AiServiceImplTest {
             VoltforgeAiConfig config = testConfig(server);
             AiServiceImpl service = new AiServiceImpl(
                     config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(),
-                    config, new ObjectMapper());
+                    config, new JsonMapper());
 
             Map<String, Object> coverage = service.getHardwareCoverage();
 
@@ -402,7 +402,7 @@ class AiServiceImplTest {
             VoltforgeAiConfig config = testConfig(server);
             AiServiceImpl service = new AiServiceImpl(
                     config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(),
-                    config, new ObjectMapper());
+                    config, new JsonMapper());
 
             Map<String, Object> coverage = service.getComponentCoverage();
 

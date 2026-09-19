@@ -1,6 +1,6 @@
 package in.voltforge.api.project.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import in.voltforge.api.common.dto.ApiResponse;
 import in.voltforge.api.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,7 +23,7 @@ import java.util.*;
 public class ProjectExportController {
 
     private final ProjectService projectService;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     @GetMapping("/{projectId}/bom")
     @Operation(summary = "Generate Bill of Materials for a project")

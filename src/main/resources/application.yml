@@ -62,13 +62,14 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
-    clean-on-validation-error: false
     clean-disabled: true
 
   # ── Jackson ────────────────────────────────────────────────────────────────
   jackson:
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
     serialization:
-      write-dates-as-timestamps: false
       fail-on-empty-beans: false
     deserialization:
       fail-on-unknown-properties: false

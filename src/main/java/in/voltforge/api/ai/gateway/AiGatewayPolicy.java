@@ -1,8 +1,8 @@
 package in.voltforge.api.ai.gateway;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import in.voltforge.api.ai.dto.AiChatRequest;
 import in.voltforge.api.config.VoltforgeAiConfig;
 import org.springframework.http.HttpStatus;
@@ -18,10 +18,10 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class AiGatewayPolicy {
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final VoltforgeAiConfig config;
 
-    public AiGatewayPolicy(ObjectMapper objectMapper, VoltforgeAiConfig config) {
+    public AiGatewayPolicy(JsonMapper objectMapper, VoltforgeAiConfig config) {
         this.objectMapper = objectMapper;
         this.config = config;
     }
@@ -94,7 +94,7 @@ public class AiGatewayPolicy {
         }
         try {
             inspectNode(objectMapper.readTree(trimmed), field, projectId, projectRevision);
-        } catch (JsonProcessingException ignored) {
+        } catch (JacksonException ignored) {
             // Free-form context is intentionally left to the AI context
             // compiler. Only an explicitly structured context is scope-checked.
         }
@@ -105,16 +105,14 @@ public class AiGatewayPolicy {
             return;
         }
         if (node.isObject()) {
-            node.fields().forEachRemaining(entry -> {
-                String key = entry.getKey();
-                JsonNode value = entry.getValue();
+            node.forEachEntry((key, value) -> {
                 if ("projectId".equalsIgnoreCase(key) || "project_id".equalsIgnoreCase(key)) {
-                    if (projectId == null || !value.isTextual() || !projectId.equals(value.asText())) {
+                    if (projectId == null || !value.isString() || !projectId.equals(value.asString())) {
                         throw invalid("AI_PROJECT_CONTEXT_MISMATCH", "AI context does not match the selected project");
                     }
                 }
                 if ("projectRevision".equalsIgnoreCase(key) || "project_revision".equalsIgnoreCase(key)) {
-                    if (projectRevision == null || !value.isTextual() || !projectRevision.equals(value.asText())) {
+                    if (projectRevision == null || !value.isString() || !projectRevision.equals(value.asString())) {
                         throw invalid("AI_PROJECT_REVISION_MISMATCH", "AI context does not match the selected project revision");
                     }
                 }

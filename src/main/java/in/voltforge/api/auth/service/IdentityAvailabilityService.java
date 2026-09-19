@@ -1,6 +1,6 @@
 package in.voltforge.api.auth.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -25,9 +25,9 @@ public class IdentityAvailabilityService {
                 .header("ngrok-skip-browser-warning", "true")
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .map(body -> this.issuer.equals(body.path("issuer").asText())
-                        && body.path("authorization_endpoint").asText().startsWith(this.issuer + "/")
-                        && body.path("jwks_uri").asText().startsWith(this.issuer + "/"))
+                .map(body -> this.issuer.equals(body.path("issuer").asString())
+                        && body.path("authorization_endpoint").asString().startsWith(this.issuer + "/")
+                        && body.path("jwks_uri").asString().startsWith(this.issuer + "/"))
                 .defaultIfEmpty(false)
                 .timeout(Duration.ofSeconds(2))
                 .onErrorReturn(false)

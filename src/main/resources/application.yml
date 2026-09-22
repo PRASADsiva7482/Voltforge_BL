@@ -14,11 +14,15 @@ spring:
   profiles:
     active: dev
 
+  threads:
+    virtual:
+      enabled: true
+
   # ── Datasource ──────────────────────────────────────────────────────────────
   datasource:
-    url: ${VOLTFORGE_DB_URL:jdbc:mysql://100.73.197.23:3306/voltforge_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8}
-    username: ${VOLTFORGE_DB_USERNAME:root}
-    password: ${VOLTFORGE_DB_PASSWORD:SIva@7482}
+    url: ${VOLTFORGE_DB_URL:jdbc:mysql://mysql-2b1e0124-v-app.h.aivencloud.com:20632/voltforge_db?sslMode=REQUIRED&useSSL=true&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8}
+    username: ${VOLTFORGE_DB_USERNAME:avnadmin}
+    password: ${VOLTFORGE_DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
@@ -42,7 +46,6 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
         jdbc:
           batch_size: 50
@@ -80,13 +83,13 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm}
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8080/realms/voltforge-realm}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/realms/voltforge-realm/protocol/openid-connect/certs}
 
 # ── Keycloak Custom Properties ───────────────────────────────────────────────
 keycloak:
   enabled: ${KEYCLOAK_ENABLED:false}
-  auth-server-url: ${KEYCLOAK_AUTH_SERVER_URL:https://copious-opposite-mangle.ngrok-free.dev}
+  auth-server-url: ${KEYCLOAK_AUTH_SERVER_URL:http://localhost:8080}
   realm: ${KEYCLOAK_REALM:voltforge-realm}
   resource: ${KEYCLOAK_CLIENT_ID:VOLT-Canvas}
   credentials:
@@ -153,3 +156,20 @@ logging:
     in.voltforge.api: DEBUG
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
+
+---
+# MySQL transport/session bounds. H2 regression tests use the test profile.
+spring:
+  config:
+    activate:
+      on-profile: "!test"
+  datasource:
+    hikari:
+      # Bound orphan transactions if a network reset prevents client rollback.
+      # Existing 30 s keepalive keeps healthy pooled connections alive.
+      connection-init-sql: SET SESSION wait_timeout=60, innodb_lock_wait_timeout=5
+      data-source-properties:
+        useCompression: true
+        connectTimeout: 5000
+        socketTimeout: 15000
+        tcpKeepAlive: true

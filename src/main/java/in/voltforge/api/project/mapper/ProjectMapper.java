@@ -23,6 +23,7 @@ public class ProjectMapper {
         if (project == null) return null;
         return ProjectResponse.builder()
                 .id(project.getId())
+                .documentRevision(Long.toString(project.getDocumentRevision()))
                 .name(project.getName())
                 .description(project.getDescription())
                 .boardType(project.getBoardType())

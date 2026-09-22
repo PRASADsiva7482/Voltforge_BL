@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,6 +49,7 @@ class ProjectServiceRevisionTest {
         project = Project.builder().owner(owner).name("revision test").build();
         project.setId("project-029");
         project.setUpdatedAt(LocalDateTime.of(2026, 8, 31, 12, 0));
+        project.setDocumentRevision(7);
         when(projectRepository.findById("project-029")).thenReturn(Optional.of(project));
         when(userRepository.findByKeycloakId("user-029")).thenReturn(Optional.of(owner));
     }
@@ -56,27 +58,60 @@ class ProjectServiceRevisionTest {
     void rejectsStaleEditorRevisionBeforeMutatingOrSaving() {
         UpdateProjectRequest request = UpdateProjectRequest.builder()
                 .description("must not overwrite newer work")
-                .expectedRevision("2026-08-31T11:59")
+                .expectedRevision("6")
                 .build();
 
         assertThatThrownBy(() -> service.updateProject("project-029", "user-029", request))
                 .isInstanceOfSatisfying(in.voltforge.api.common.exception.ConflictException.class,
                         error -> org.assertj.core.api.Assertions.assertThat(error.getErrorCode())
                                 .isEqualTo("PROJECT_REVISION_STALE"));
-        verify(projectRepository, never()).save(any(Project.class));
+        verify(projectRepository, never()).saveAndFlush(any(Project.class));
+        assertThat(project.getDescription()).isNull();
     }
 
     @Test
     void acceptsMatchingEditorRevisionAndReturnsTheSavedProject() {
-        when(projectRepository.save(project)).thenReturn(project);
+        when(projectRepository.saveAndFlush(project)).thenAnswer(call -> {
+            project.setDocumentRevision(project.getDocumentRevision() + 1);
+            return project;
+        });
 
         UpdateProjectRequest request = UpdateProjectRequest.builder()
                 .description("same revision")
-                .expectedRevision("2026-08-31T12:00")
+                .expectedRevision("7")
                 .build();
 
-        service.updateProject("project-029", "user-029", request);
+        var response = service.updateProject("project-029", "user-029", request);
 
-        verify(projectRepository).save(project);
+        verify(projectRepository).saveAndFlush(project);
+        assertThat(response.getDocumentRevision()).isEqualTo("8");
+    }
+
+    @Test
+    void rejectsMissingAndLegacyTokensWithoutChangingTheDocument() {
+        for (String revision : new String[]{null, "", "2026-08-31T12:00"}) {
+            assertThatThrownBy(() -> service.updateProject("project-029", "user-029",
+                    UpdateProjectRequest.builder().name("overwrite").expectedRevision(revision).build()))
+                    .isInstanceOf(in.voltforge.api.common.exception.ConflictException.class);
+        }
+        assertThat(project.getName()).isEqualTo("revision test");
+        assertThat(project.getDocumentRevision()).isEqualTo(7);
+        verify(projectRepository, never()).saveAndFlush(any(Project.class));
+    }
+
+    @Test
+    void codeOnlySaveAdvancesRevisionAndRejectsReuse() {
+        when(projectRepository.saveAndFlush(project)).thenAnswer(call -> {
+            project.setDocumentRevision(project.getDocumentRevision() + 1);
+            return project;
+        });
+        var request = UpdateProjectRequest.builder().expectedRevision("7")
+                .codeFiles(java.util.List.of(in.voltforge.api.project.dto.CodeFileRequest.builder()
+                        .filename("sketch.ino").content("void setup() {} void loop() {}").build())).build();
+        var response = service.updateProject("project-029", "user-029", request);
+        assertThat(response.getDocumentRevision()).isEqualTo("8");
+        assertThat(response.getCodeFiles()).hasSize(1);
+        assertThatThrownBy(() -> service.updateProject("project-029", "user-029", request))
+                .isInstanceOf(in.voltforge.api.common.exception.ConflictException.class);
     }
 }

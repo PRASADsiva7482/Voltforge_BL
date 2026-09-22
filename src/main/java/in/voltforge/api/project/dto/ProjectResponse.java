@@ -17,6 +17,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class ProjectResponse {
     private String id;
+    private String documentRevision;
     private String name;
     private String description;
     private BoardType boardType;

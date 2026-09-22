@@ -39,11 +39,9 @@ public class CollaborationController {
         }
 
         log.debug("Canvas event for project {}: {}", projectId, event.getEventType());
-        if (event.getPayload() != null
-                && event.getPayload().containsKey("nodes")
-                && event.getPayload().containsKey("wires")) {
-            projectService.scheduleCanvasLayoutSave(projectId, principal.getName(), event.getPayload());
-        }
+        // Live previews are transient. The editor persists the whole document via
+        // the revision-guarded REST save and receives its new revision there.
+        // A second delayed writer here can overwrite a newer save without an ack.
         messagingTemplate.convertAndSend("/topic/project/" + projectId + "/canvas", event);
     }
 

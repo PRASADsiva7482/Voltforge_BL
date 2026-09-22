@@ -6,7 +6,6 @@ import in.voltforge.api.project.dto.ProjectResponse;
 import in.voltforge.api.project.dto.ProjectSummaryResponse;
 import in.voltforge.api.project.dto.UpdateProjectRequest;
 
-import java.util.Map;
 
 public interface ProjectService {
 
@@ -16,13 +15,10 @@ public interface ProjectService {
 
     boolean canAccessProject(String projectId, String keycloakId);
 
-    /** Returns the current optimistic-concurrency revision for an accessible project. */
+    /** Legacy timestamp fingerprint for context validation; editor saves use ProjectResponse.documentRevision. */
     String getProjectRevision(String projectId, String keycloakId);
 
     boolean canEditProject(String projectId, String keycloakId);
-
-    void scheduleCanvasLayoutSave(String projectId, String keycloakId,
-                                  Map<String, Object> canvasLayout);
 
     ProjectResponse updateProject(String projectId, String keycloakId, UpdateProjectRequest request);
 

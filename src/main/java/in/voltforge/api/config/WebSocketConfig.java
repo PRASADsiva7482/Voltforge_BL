@@ -12,6 +12,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 import java.util.Arrays;
 
@@ -31,10 +32,22 @@ import java.util.Arrays;
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    public static final int STOMP_MESSAGE_LIMIT_BYTES = 1024 * 1024;
+    // SockJS JSON framing can escape a complete STOMP frame a second time.
+    public static final int CONTAINER_BUFFER_SIZE = 2 * STOMP_MESSAGE_LIMIT_BYTES;
+
     private final WebSocketAuthChannelInterceptor authChannelInterceptor;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
+
+    @Bean
+    public ServletServerContainerFactoryBean webSocketContainer() {
+        ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(CONTAINER_BUFFER_SIZE);
+        container.setMaxBinaryMessageBufferSize(CONTAINER_BUFFER_SIZE);
+        return container;
+    }
 
     @Bean
     public TaskScheduler wsHeartbeatScheduler() {
@@ -79,8 +92,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
-        registration.setMessageSizeLimit(1024 * 1024);
+        registration.setMessageSizeLimit(STOMP_MESSAGE_LIMIT_BYTES);
         registration.setSendTimeLimit(15 * 1000);
-        registration.setSendBufferSizeLimit(512 * 1024);
+        registration.setSendBufferSizeLimit(CONTAINER_BUFFER_SIZE);
     }
 }

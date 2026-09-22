@@ -13,12 +13,14 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 @Entity
+@DynamicUpdate
 @Table(name = "projects")
 @Getter
 @Setter
@@ -33,6 +36,13 @@ import java.util.Map;
 @AllArgsConstructor
 @Builder
 public class Project extends BaseEntity {
+
+    // Checked and advanced by the document UPDATE, without locking during upload.
+    // Bulk view/fork counter updates deliberately leave this version unchanged.
+    @Version
+    @Column(name = "document_revision", nullable = false)
+    @Builder.Default
+    private long documentRevision = 0;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id", nullable = false)

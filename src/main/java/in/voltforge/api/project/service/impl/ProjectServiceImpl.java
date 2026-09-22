@@ -23,14 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -43,28 +36,8 @@ public class ProjectServiceImpl implements ProjectService {
     private final ProjectShareRepository projectShareRepository;
     private final ProjectMapper projectMapper;
 
-    // ── Debounce infrastructure for canvas-layout saves ───────────────────────
-    // One scheduler thread is sufficient; all tasks are lightweight DB writes.
-    private final ScheduledExecutorService debounceScheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "canvas-save-debounce");
-                t.setDaemon(true);
-                return t;
-            });
-
-    /**
-     * Pending futures keyed by projectId. A new event cancels the previous
-     * pending flush and schedules a fresh one, so only the final canvas state
-     * after DEBOUNCE_DELAY_MS of inactivity is written to MySQL.
-     */
-    private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingCanvasSaves =
-            new ConcurrentHashMap<>();
-
-    /** Idle window after the last canvas event before committing to DB (ms). */
-    private static final long DEBOUNCE_DELAY_MS = 2_000;
-
     @Override
-    @Transactional
+    @Transactional(timeout = 20)
     public ProjectResponse createProject(String keycloakId, CreateProjectRequest request) {
         User owner = userRepository.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "keycloakId", keycloakId));
@@ -191,8 +164,10 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     @Override
-    @Transactional
+    @Transactional(timeout = 20)
     public ProjectResponse updateProject(String projectId, String keycloakId, UpdateProjectRequest request) {
+        // Hibernate includes document_revision in the UPDATE predicate. Do not
+        // hold a SELECT FOR UPDATE lock while sending a large document to MySQL.
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
 
@@ -203,10 +178,7 @@ public class ProjectServiceImpl implements ProjectService {
             throw new ForbiddenException("You are not the owner of this project");
         }
 
-        if (request.getExpectedRevision() != null
-                && !request.getExpectedRevision().isBlank()
-                && (project.getUpdatedAt() == null
-                || !request.getExpectedRevision().equals(project.getUpdatedAt().toString()))) {
+        if (!Long.toString(project.getDocumentRevision()).equals(request.getExpectedRevision())) {
             throw new ConflictException(
                     "PROJECT_REVISION_STALE",
                     "The project changed since this editor state was loaded. Reload it before saving.");
@@ -251,80 +223,17 @@ public class ProjectServiceImpl implements ProjectService {
             }
         }
 
-        project = projectRepository.save(project);
+        // Make the parent dirty even for code-only/no-op saves. @Version then
+        // checks and advances the token during this flush, before the response
+        // is mapped; a losing writer rolls back all child-file changes as well.
+        project.setUpdatedAt(java.time.LocalDateTime.now());
+        project = projectRepository.saveAndFlush(project);
         log.info("Updated project '{}' by user '{}'", project.getName(), user.getUsername());
         return projectMapper.toResponse(project);
     }
 
-    /**
-     * Debounced canvas-layout persist — safe to call on every WebSocket canvas-delta event.
-     *
-     * The actual DB write is deferred until DEBOUNCE_DELAY_MS after the last call
-     * for a given project, collapsing N rapid WS events into a single MySQL UPDATE.
-     *
-     * This method is intentionally NOT @Transactional at the call site — the inner
-     * Runnable opens its own short transaction via the repository.
-     *
-     * @param projectId   ID of the project to persist
-     * @param keycloakId  Caller's Keycloak subject (ownership guard)
-     * @param canvasLayout The latest canvas state (nodes + wires JSON)
-     */
-    public void scheduleCanvasLayoutSave(String projectId, String keycloakId,
-                                         Map<String, Object> canvasLayout) {
-        // Cancel any pending flush for this project
-        ScheduledFuture<?> existing = pendingCanvasSaves.get(projectId);
-        if (existing != null && !existing.isDone()) {
-            existing.cancel(false);
-        }
-
-        // Schedule a new flush after the debounce window
-        ScheduledFuture<?> future = debounceScheduler.schedule(() -> {
-            try {
-                flushCanvasLayoutToDb(projectId, keycloakId, canvasLayout);
-            } finally {
-                pendingCanvasSaves.remove(projectId);
-            }
-        }, DEBOUNCE_DELAY_MS, TimeUnit.MILLISECONDS);
-
-        pendingCanvasSaves.put(projectId, future);
-        log.debug("Canvas save debounced for project '{}' — flushing in {} ms", projectId, DEBOUNCE_DELAY_MS);
-    }
-
-    /**
-     * Performs the actual DB write inside a dedicated transaction.
-     * Called only by the debounce scheduler, never directly from WS events.
-     */
-    @Transactional
-    protected void flushCanvasLayoutToDb(String projectId, String keycloakId,
-                                          Map<String, Object> canvasLayout) {
-        Project project = projectRepository.findById(projectId).orElse(null);
-        if (project == null) {
-            log.warn("Canvas flush skipped — project '{}' not found", projectId);
-            return;
-        }
-        // Re-check edit permission in the delayed task because the original
-        // WebSocket request has already returned by the time this runs.
-        if (!canEditProject(projectId, keycloakId)) {
-            log.warn("Canvas flush rejected — user '{}' cannot edit project '{}'",
-                     keycloakId, projectId);
-            return;
-        }
-        Map<String, Object> persistedCanvasLayout = new LinkedHashMap<>(canvasLayout);
-        Object pcbLayout = persistedCanvasLayout.remove("pcbLayout");
-        project.setCanvasLayout(persistedCanvasLayout);
-        if (pcbLayout != null) {
-            Map<String, Object> componentConfig = project.getComponentConfig() == null
-                    ? new LinkedHashMap<>()
-                    : new LinkedHashMap<>(project.getComponentConfig());
-            componentConfig.put("pcbLayout", pcbLayout);
-            project.setComponentConfig(componentConfig);
-        }
-        projectRepository.save(project);
-        log.info("Canvas layout flushed to DB for project '{}'", projectId);
-    }
-
     @Override
-    @Transactional
+    @Transactional(timeout = 20)
     public void deleteProject(String projectId, String keycloakId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));

@@ -5,14 +5,31 @@ import in.voltforge.api.auth.service.IdentityAvailabilityService;
 import in.voltforge.api.common.dto.ApiResponse;
 import in.voltforge.api.project.entity.Project;
 import in.voltforge.api.project.repository.ProjectRepository;
+import in.voltforge.api.project.repository.ProjectShareRepository;
+import in.voltforge.api.project.entity.ProjectShare;
+import in.voltforge.api.project.service.ProjectService;
+import in.voltforge.api.project.controller.CollaborationController;
+import in.voltforge.api.project.dto.CanvasEvent;
+import in.voltforge.api.project.dto.CreateProjectRequest;
+import in.voltforge.api.project.dto.UpdateProjectRequest;
+import in.voltforge.api.project.dto.CodeFileRequest;
+import in.voltforge.api.project.controller.ProjectRequestBodyAdvice;
+import in.voltforge.api.common.enums.SharePermission;
+import org.springframework.messaging.MessagingException;
 import in.voltforge.api.user.entity.User;
 import in.voltforge.api.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.ServletContext;
+import jakarta.websocket.server.ServerContainer;
+import in.voltforge.api.config.WebSocketConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -27,6 +44,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 /** Exercises the actual web server and persistence wiring with an isolated database. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -48,8 +67,129 @@ class BackendRuntimeCompatibilityTest {
     @Autowired ProjectRepository projects;
     @Autowired UserRepository users;
     @Autowired EntityManager entityManager;
+    @Autowired ServletContext servletContext;
+    @Autowired ProjectShareRepository shares;
+    @Autowired ProjectService projectService;
+    @Autowired CollaborationController collaboration;
+    @Autowired PlatformTransactionManager transactionManager;
     @MockitoBean JwtDecoder jwtDecoder;
     @MockitoBean IdentityAvailabilityService identityAvailability;
+
+    @Test
+    void oversizedProjectBodiesAreRejectedBeforeControllerForKnownAndChunkedLengths() throws Exception {
+        when(jwtDecoder.decode("size-token")).thenReturn(Jwt.withTokenValue("size-token")
+                .header("alg", "RS256").subject("size-user").build());
+        String body = "{\"name\":\"size test\",\"description\":\"" + "Ω".repeat(ProjectRequestBodyAdvice.MAX_REQUEST_BYTES / 2) + "\"}";
+        byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            for (boolean chunked : new boolean[]{false, true}) {
+                var publisher = chunked
+                        ? HttpRequest.BodyPublishers.ofInputStream(() -> new java.io.ByteArrayInputStream(bytes))
+                        : HttpRequest.BodyPublishers.ofByteArray(bytes);
+                var response = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/voltForge-app/api/v1/projects"))
+                        .header("Authorization", "Bearer size-token").header("Content-Type", "application/json")
+                        .POST(publisher).build(), HttpResponse.BodyHandlers.ofString());
+                assertThat(response.statusCode()).isEqualTo(413);
+                assertThat(mapper.readTree(response.body()).path("errorCode").asString()).isEqualTo("PROJECT_PAYLOAD_TOO_LARGE");
+            }
+        }
+        assertThat(users.findByKeycloakId("size-user")).isEmpty();
+    }
+
+    @Test
+    void largeDocumentsAndCodeOnlySavesCommitWithDurableRevisionAcknowledgements() {
+        User owner = users.saveAndFlush(User.builder().keycloakId("large-owner")
+                .username("large-owner").email("large-owner@example.invalid").build());
+        String id = null;
+        try {
+            var created = projectService.createProject("large-owner", CreateProjectRequest.builder().name("Large save").build());
+            id = created.getId();
+            var canvas = Map.<String, Object>of("notes", "Ω".repeat(550000));
+            var pcb = Map.<String, Object>of("pcbLayout", Map.of("notes", "x".repeat(600000)));
+            var files = List.of(CodeFileRequest.builder().filename("sketch.ino").content("// " + "漢".repeat(200000)).build());
+            var saved = projectService.updateProject(id, "large-owner", UpdateProjectRequest.builder()
+                    .expectedRevision(created.getDocumentRevision()).canvasLayout(canvas).componentConfig(pcb).codeFiles(files).build());
+            var reopened = projectService.getProject(id, "large-owner");
+            assertThat(reopened.getCanvasLayout()).isEqualTo(canvas);
+            assertThat(reopened.getComponentConfig()).isEqualTo(pcb);
+            assertThat(reopened.getCodeFiles().getFirst().getContent()).isEqualTo(files.getFirst().getContent());
+            assertThat(reopened.getDocumentRevision()).isEqualTo(saved.getDocumentRevision()).isEqualTo("1");
+            var codeOnly = projectService.updateProject(id, "large-owner", UpdateProjectRequest.builder()
+                    .expectedRevision("1").codeFiles(List.of(CodeFileRequest.builder().filename("sketch.ino").content("// code only").build())).build());
+            assertThat(codeOnly.getDocumentRevision()).isEqualTo("2");
+            var noop = projectService.updateProject(id, "large-owner", UpdateProjectRequest.builder().expectedRevision("2").build());
+            assertThat(noop.getDocumentRevision()).isEqualTo("3");
+            assertThat(projectService.getProject(id, "large-owner").getDocumentRevision()).isEqualTo("3");
+        } finally {
+            if (id != null) projectService.deleteProject(id, "large-owner");
+            users.deleteById(owner.getId());
+        }
+    }
+
+    @Test
+    void concurrentVersionedWritesRollBackTheLosingChildDocument() throws Exception {
+        User owner = users.saveAndFlush(User.builder().keycloakId("race-owner")
+                .username("race-owner").email("race-owner@example.invalid").build());
+        var created = projectService.createProject("race-owner", CreateProjectRequest.builder().name("Atomic race").build());
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var tasks = java.util.stream.IntStream.range(0, 2).mapToObj(writer -> executor.submit(() -> {
+                try {
+                    return new TransactionTemplate(transactionManager).execute(status -> {
+                        Project project = projects.findById(created.getId()).orElseThrow();
+                        project.getCodeFiles().size();
+                        try { barrier.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+                        catch (Exception e) { throw new RuntimeException(e); }
+                        project.setDescription("writer-" + writer);
+                        project.getCodeFiles().getFirst().setContent("writer-" + writer);
+                        projects.flush();
+                        return "saved";
+                    });
+                } catch (org.springframework.dao.OptimisticLockingFailureException e) { return "conflict"; }
+            })).toList();
+            assertThat(List.of(tasks.get(0).get(), tasks.get(1).get())).containsExactlyInAnyOrder("saved", "conflict");
+            var reopened = projectService.getProject(created.getId(), "race-owner");
+            assertThat(reopened.getDocumentRevision()).isEqualTo("1");
+            assertThat(reopened.getCodeFiles().getFirst().getContent()).isEqualTo(reopened.getDescription());
+        } finally {
+            projectService.deleteProject(created.getId(), "race-owner");
+            users.deleteById(owner.getId());
+        }
+    }
+
+    @Test
+    void nativeWebSocketContainerAcceptsTheConfiguredStompFrameBudget() {
+        ServerContainer container = (ServerContainer) servletContext.getAttribute("jakarta.websocket.server.ServerContainer");
+        assertThat(container).isNotNull();
+        assertThat(container.getDefaultMaxTextMessageBufferSize()).isEqualTo(WebSocketConfig.CONTAINER_BUFFER_SIZE);
+        assertThat(container.getDefaultMaxBinaryMessageBufferSize()).isEqualTo(WebSocketConfig.CONTAINER_BUFFER_SIZE);
+    }
+
+    @Test
+    @Transactional
+    void collaborationRetainsSharedPermissionsAndServerOwnedEventIdentity() {
+        User owner = users.saveAndFlush(User.builder().keycloakId("sync-owner")
+                .username("sync-owner").email("sync-owner@example.invalid").build());
+        User viewer = users.saveAndFlush(User.builder().keycloakId("sync-viewer")
+                .username("sync-viewer").email("sync-viewer@example.invalid").build());
+        Project project = projects.saveAndFlush(Project.builder().owner(owner).name("Live Sync permissions").build());
+        ProjectShare share = shares.saveAndFlush(ProjectShare.builder().project(project).sharedWithUser(viewer)
+                .permission(SharePermission.VIEW).build());
+        assertThat(projectService.canAccessProject(project.getId(), "sync-viewer")).isTrue();
+        assertThat(projectService.canEditProject(project.getId(), "sync-viewer")).isFalse();
+        CanvasEvent event = new CanvasEvent();
+        event.setEventType("CANVAS_SYNC");
+        event.setUserId("forged-owner");
+        event.setPayload(Map.of("nodes", List.of(), "wires", List.of()));
+        assertThatThrownBy(() -> collaboration.handleCanvasUpdate(project.getId(), event, () -> "sync-viewer"))
+                .isInstanceOf(MessagingException.class);
+        share.setPermission(SharePermission.EDIT);
+        shares.saveAndFlush(share);
+        assertThat(projectService.canEditProject(project.getId(), "sync-viewer")).isTrue();
+        collaboration.handleCanvasUpdate(project.getId(), event, () -> "sync-viewer");
+        assertThat(event.getUserId()).isEqualTo("sync-viewer");
+        assertThat(projects.findById(project.getId()).orElseThrow().getDocumentRevision()).isZero();
+    }
 
     @Test
     void healthAndOpenApiAreAvailableOnTheConfiguredContextPath() throws Exception {

@@ -43,10 +43,10 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
     long countNewProjectsToday();
 
     @Modifying
-    @Query("UPDATE Project p SET p.viewCount = p.viewCount + 1 WHERE p.id = :projectId")
+    @Query("UPDATE Project p SET p.viewCount = p.viewCount + 1, p.updatedAt = p.updatedAt WHERE p.id = :projectId")
     void incrementViewCount(@Param("projectId") String projectId);
 
     @Modifying
-    @Query("UPDATE Project p SET p.forkCount = p.forkCount + 1 WHERE p.id = :projectId")
+    @Query("UPDATE Project p SET p.forkCount = p.forkCount + 1, p.updatedAt = p.updatedAt WHERE p.id = :projectId")
     void incrementForkCount(@Param("projectId") String projectId);
 }

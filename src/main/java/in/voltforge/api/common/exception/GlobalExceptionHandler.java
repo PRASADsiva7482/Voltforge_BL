@@ -2,6 +2,13 @@ package in.voltforge.api.common.exception;
 
 import in.voltforge.api.ai.gateway.AiGatewayException;
 import in.voltforge.api.common.dto.ApiResponse;
+import in.voltforge.api.project.controller.ProjectRequestBodyAdvice.PayloadTooLargeException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.transaction.TransactionTimedOutException;
+import org.springframework.transaction.TransactionSystemException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +28,26 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(PayloadTooLargeException.class)
+    public ResponseEntity<ApiResponse<Void>> handleProjectSize(PayloadTooLargeException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ApiResponse.error(ex.getMessage(), "PROJECT_PAYLOAD_TOO_LARGE"));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConcurrentSave(OptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(
+                "The project changed since this editor state was loaded. Reload it before saving.", "PROJECT_REVISION_STALE"));
+    }
+
+    @ExceptionHandler({CannotAcquireLockException.class, QueryTimeoutException.class,
+            DataAccessResourceFailureException.class, TransactionTimedOutException.class, TransactionSystemException.class})
+    public ResponseEntity<ApiResponse<Void>> handleDatabaseUnavailable(Exception ex) {
+        log.warn("Database operation unavailable: {}", ex.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ApiResponse.error(
+                "The database operation could not be confirmed. Retry shortly.", "DATABASE_UNAVAILABLE"));
+    }
 
     @ExceptionHandler(AiGatewayException.class)
     public ResponseEntity<ApiResponse<Void>> handleAiGateway(AiGatewayException ex) {

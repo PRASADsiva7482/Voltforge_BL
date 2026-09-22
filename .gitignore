@@ -11,6 +11,9 @@ target/
 *.iml
 *.ipr
 .vscode/
+.classpath
+.project
+.settings/
 
 ### Maven ###
 .mvn/

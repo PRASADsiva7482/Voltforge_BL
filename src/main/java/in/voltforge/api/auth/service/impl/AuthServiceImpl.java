@@ -46,6 +46,7 @@ public class AuthServiceImpl implements AuthService {
             if (displayName != null && !displayName.equals(user.getDisplayName())) {
                 user.setDisplayName(displayName);
             }
+            user.setRole(determineRole(jwt));
             log.info("Synced existing user: {} ({})", username, keycloakId);
         } else {
             user = User.builder()
@@ -91,6 +92,22 @@ public class AuthServiceImpl implements AuthService {
                 List<String> roles = (List<String>) realmAccess.get("roles");
                 if (roles != null && roles.stream().anyMatch(r -> r.equalsIgnoreCase("ADMIN"))) {
                     return UserRole.ADMIN;
+                }
+            }
+
+            Map<String, Object> resourceAccess = jwt.getClaimAsMap("resource_access");
+            if (resourceAccess != null) {
+                for (Object rawClientAccess : resourceAccess.values()) {
+                    if (!(rawClientAccess instanceof Map<?, ?> clientAccess)) {
+                        continue;
+                    }
+                    Object rawRoles = clientAccess.get("roles");
+                    if (rawRoles instanceof List<?> roles
+                            && roles.stream().filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .anyMatch(r -> r.equalsIgnoreCase("ADMIN"))) {
+                        return UserRole.ADMIN;
+                    }
                 }
             }
         } catch (Exception e) {

@@ -1,18 +1,17 @@
-FROM eclipse-temurin:17-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-25-alpine AS builder
 WORKDIR /app
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw dependency:resolve
+COPY pom.xml ./
+RUN mvn --batch-mode --no-transfer-progress dependency:go-offline
 COPY src/ src/
-RUN ./mvnw clean package -DskipTests
+RUN mvn --batch-mode --no-transfer-progress clean verify
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 RUN addgroup -S voltforge && adduser -S voltforge -G voltforge
 COPY --from=builder /app/target/*.jar app.jar
 RUN chown voltforge:voltforge app.jar
 USER voltforge
-EXPOSE 8081
+EXPOSE 2001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:8081/actuator/health || exit 1
+    CMD wget -qO- http://localhost:2001/voltForge-app/actuator/health || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]

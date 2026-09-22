@@ -1,6 +1,6 @@
 package in.voltforge.api.simulation.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import in.voltforge.api.common.enums.BoardType;
 import in.voltforge.api.simulation.dto.FirmwareCompileRequest;
 import in.voltforge.api.simulation.dto.FirmwareCompileResponse;
@@ -91,6 +91,6 @@ class FirmwareCompilerServiceImplTest {
     private FirmwareCompilerServiceImpl serviceWithRemoteResponse(String body) {
         WebClient.Builder builder = WebClient.builder()
                 .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK).body(body).build()));
-        return new FirmwareCompilerServiceImpl(new ObjectMapper(), builder);
+        return new FirmwareCompilerServiceImpl(new JsonMapper(), builder);
     }
 }

@@ -3,6 +3,7 @@ package in.voltforge.api.project.dto;
 import in.voltforge.api.common.enums.BoardType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -34,5 +35,7 @@ public class CreateProjectRequest {
 
     private String tags;
 
+    @Valid
+    @Size(max = 50, message = "A project may contain at most 50 code files")
     private List<CodeFileRequest> codeFiles;
 }

@@ -2,6 +2,8 @@ package in.voltforge.api.project.dto;
 
 import in.voltforge.api.common.enums.BoardType;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -22,6 +24,14 @@ public class UpdateProjectRequest {
     @Size(max = 5000, message = "Description must not exceed 5000 characters")
     private String description;
 
+    /**
+     * Opaque optimistic-concurrency token returned as Project.documentRevision.
+     * Older timestamp-based clients must reload after upgrading.
+     */
+    @Size(max = 64, message = "Expected revision must not exceed 64 characters")
+    @NotBlank(message = "Expected document revision is required")
+    private String expectedRevision;
+
     private BoardType boardType;
 
     private Map<String, Object> canvasLayout;
@@ -32,5 +42,7 @@ public class UpdateProjectRequest {
 
     private String tags;
 
+    @Valid
+    @Size(max = 50, message = "A project may contain at most 50 code files")
     private List<CodeFileRequest> codeFiles;
 }

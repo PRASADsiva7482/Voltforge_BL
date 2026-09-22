@@ -29,6 +29,8 @@ public class AiValidatorResponse {
     private List<AiWireSuggestion> wireSuggestions;
     private List<Map<String, Object>> codeFixes;
     private Double confidence;
+    private Map<String, Object> engineeringAuthority;
+    private Map<String, Object> engineeringReport;
 
     @Data
     @Builder
@@ -38,7 +40,13 @@ public class AiValidatorResponse {
     public static class ValidationIssue {
         private String severity; // CRITICAL, WARNING, INFO
         private String componentId;
+        private String findingId;
+        private String type;
         private String message;
         private String suggestedFix;
+        private List<String> affectedProjectIds;
+        private List<String> evidenceRefs;
+        private Boolean blocking;
+        private String modelOverridePolicy;
     }
 }

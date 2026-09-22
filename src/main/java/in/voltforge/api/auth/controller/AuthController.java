@@ -1,6 +1,7 @@
 package in.voltforge.api.auth.controller;
 
 import in.voltforge.api.auth.service.AuthService;
+import in.voltforge.api.auth.service.IdentityAvailabilityService;
 import in.voltforge.api.common.dto.ApiResponse;
 import in.voltforge.api.user.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +22,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final IdentityAvailabilityService identityAvailability;
+
+    public record IdentityHealth(String issuer, boolean available) {}
+
+    @GetMapping("/identity-health")
+    @Operation(summary = "Check the configured sign-in provider without browser discovery CORS")
+    public ResponseEntity<ApiResponse<IdentityHealth>> identityHealth() {
+        boolean available = identityAvailability.isAvailable();
+        return ResponseEntity.status(available ? 200 : 503)
+                .header("Cache-Control", "no-store")
+                .body(ApiResponse.success(new IdentityHealth(identityAvailability.issuer(), available)));
+    }
 
     @PostMapping("/sync")
     @Operation(summary = "Sync Keycloak user to local database")

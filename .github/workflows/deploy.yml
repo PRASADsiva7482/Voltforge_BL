@@ -12,7 +12,7 @@ on:
         default: 'latest'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -22,6 +22,19 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Set up Java & Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'maven'
+
+      - name: Build Executable Spring Boot JAR
+        run: |
+          mvn clean package -DskipTests
+          JAR_FILE=$(ls target/*.jar | head -n 1)
+          cp "$JAR_FILE" voltforge-bl.jar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -57,7 +70,7 @@ jobs:
           echo "TAGS_LIST=${TAGS_LIST}" >> $GITHUB_ENV
           echo "Image target: ${IMAGE}:${TAG}"
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Production Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -65,6 +78,18 @@ jobs:
           tags: ${{ env.TAGS_LIST }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Attach Compiled JAR Artifact to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: "Release ${{ env.TAG }}"
+          files: voltforge-bl.jar
+          generate_release_notes: true
+          body: |
+            ### VoltForge Backend Production Artifacts
+            * **Container Image (GHCR):** `${{ env.IMAGE }}:${{ env.TAG }}` *(Alpine JRE + compiled JAR only — zero Java source code)*
+            * **Attached JAR File:** `voltforge-bl.jar` *(Standalone executable Spring Boot JAR)*
 
       - name: Deploy to Azure VM via SSH
         uses: appleboy/ssh-action@v1.0.3

@@ -23,19 +23,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Java & Maven
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '25'
-          cache: 'maven'
-
-      - name: Build Executable Spring Boot JAR
-        run: |
-          mvn clean package -DskipTests
-          JAR_FILE=$(ls target/*.jar | head -n 1)
-          cp "$JAR_FILE" voltforge-bl.jar
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -75,9 +62,16 @@ jobs:
         with:
           context: .
           push: true
+          load: true
           tags: ${{ env.TAGS_LIST }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Extract Compiled JAR from Docker Image
+        run: |
+          docker create --name temp_bl ${{ env.IMAGE }}:${{ env.TAG }}
+          docker cp temp_bl:/app/app.jar ./voltforge-bl.jar
+          docker rm temp_bl
 
       - name: Attach Compiled JAR Artifact to GitHub Release
         uses: softprops/action-gh-release@v2

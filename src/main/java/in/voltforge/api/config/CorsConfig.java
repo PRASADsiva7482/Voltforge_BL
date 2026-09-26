@@ -13,13 +13,13 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
-    @Value("${app.cors.allowed-methods:GET,POST,PUT,DELETE,PATCH,OPTIONS}")
+    @Value("${app.cors.allowed-methods}")
     private String allowedMethods;
 
-    @Value("${app.cors.max-age:3600}")
+    @Value("${app.cors.max-age}")
     private long maxAge;
 
     @Bean

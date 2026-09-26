@@ -23,10 +23,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final int MAX_TRACKED_CLIENTS = 10_000;
 
-    @Value("${app.rate-limit.requests-per-minute:60}")
+    @Value("${app.rate-limit.requests-per-minute}")
     private int requestsPerMinute;
 
-    @Value("${app.rate-limit.trust-forwarded-headers:false}")
+    @Value("${app.rate-limit.trust-forwarded-headers}")
     private boolean trustForwardedHeaders;
 
     private final Map<String, Bucket> bucketCache = new ConcurrentHashMap<>();

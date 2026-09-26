@@ -20,9 +20,9 @@ spring:
 
   # ── Datasource ──────────────────────────────────────────────────────────────
   datasource:
-    url: ${VOLTFORGE_DB_URL:jdbc:mysql://mysql-2b1e0124-v-app.h.aivencloud.com:20632/voltforge_db?sslMode=REQUIRED&useSSL=true&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8}
-    username: ${VOLTFORGE_DB_USERNAME:avnadmin}
-    password: ${VOLTFORGE_DB_PASSWORD:}
+    url: jdbc:mysql://localhost:3306/voltforge_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    username: root
+    password: SIva@7482
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
@@ -61,7 +61,7 @@ spring:
     # tree does not ship those migration files. Do not run a partial migration
     # set against the existing database; manage schema changes separately until
     # the complete history is restored.
-    enabled: ${VOLTFORGE_FLYWAY_ENABLED:false}
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
@@ -83,23 +83,23 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8080/realms/voltforge-realm}
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/realms/voltforge-realm/protocol/openid-connect/certs}
+          issuer-uri: http://localhost:8080/realms/voltforge-realm
+          jwk-set-uri: http://localhost:8080/realms/voltforge-realm/protocol/openid-connect/certs
 
 # ── Keycloak Custom Properties ───────────────────────────────────────────────
 keycloak:
-  enabled: ${KEYCLOAK_ENABLED:false}
-  auth-server-url: ${KEYCLOAK_AUTH_SERVER_URL:http://localhost:8080}
-  realm: ${KEYCLOAK_REALM:voltforge-realm}
-  resource: ${KEYCLOAK_CLIENT_ID:VOLT-Canvas}
+  enabled: false
+  auth-server-url: http://localhost:8080
+  realm: voltforge-realm
+  resource: VOLT-Canvas
   credentials:
-    secret: ${KEYCLOAK_CLIENT_SECRET:}
+    secret: BpJfF6q1sdld27MOOXonOFC84GZlHyrC
 
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    allowed-origins: http://localhost:3000
     allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
     allowed-headers: "*"
     allow-credentials: true
@@ -110,25 +110,25 @@ app:
     requests-per-minute: 60
     trust-forwarded-headers: false
   ai:
-    environment: ${VOLTFORGE_AI_ENVIRONMENT:development}
+    environment: development
     model:
-      url: ${VOLTFORGE_AI_URL:http://127.0.0.1:2002/voltForge-ai}
+      url: http://localhost:2002/voltForge-ai
       timeout: 15
-      streaming-timeout: ${VOLTFORGE_AI_STREAMING_TIMEOUT:60}
+      streaming-timeout: 60
       # Private backend-to-AI credential. It is never returned to the browser.
-      api-token: ${VOLTFORGE_AI_API_TOKEN:}
+      api-token: ""
     gateway:
-      max-request-bytes: ${VOLTFORGE_AI_MAX_REQUEST_BYTES:2000000}
-      max-concurrent-streams-per-user: ${VOLTFORGE_AI_MAX_STREAMS_PER_USER:2}
-      max-concurrent-streams-per-project: ${VOLTFORGE_AI_MAX_STREAMS_PER_PROJECT:1}
+      max-request-bytes: 2000000
+      max-concurrent-streams-per-user: 2
+      max-concurrent-streams-per-project: 1
   simulation:
     compiler:
       # REMOTE posts { sketch, fqbn, boardType } to a compiler service.
       # ARDUINO_CLI runs arduino-cli locally on this backend host.
-      mode: ${AVR_COMPILER_MODE:REMOTE}
-      remote-url: ${AVR_COMPILER_URL:https://hexi.wokwi.com/build}
-      arduino-cli-path: ${ARDUINO_CLI_PATH:arduino-cli}
-      timeout-seconds: ${AVR_COMPILER_TIMEOUT:45}
+      mode: REMOTE
+      remote-url: https://hexi.wokwi.com/build
+      arduino-cli-path: arduino-cli
+      timeout-seconds: 45
 
 # ── SpringDoc / Swagger ─────────────────────────────────────────────────────
 springdoc:

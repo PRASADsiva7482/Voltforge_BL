@@ -99,16 +99,16 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
     private final JsonMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
 
-    @Value("${app.simulation.compiler.mode:REMOTE}")
+    @Value("${app.simulation.compiler.mode}")
     private String compilerMode;
 
-    @Value("${app.simulation.compiler.remote-url:https://hexi.wokwi.com/build}")
+    @Value("${app.simulation.compiler.remote-url}")
     private String remoteCompilerUrl;
 
-    @Value("${app.simulation.compiler.arduino-cli-path:arduino-cli}")
+    @Value("${app.simulation.compiler.arduino-cli-path}")
     private String arduinoCliPath;
 
-    @Value("${app.simulation.compiler.timeout-seconds:45}")
+    @Value("${app.simulation.compiler.timeout-seconds}")
     private int timeoutSeconds;
 
     @Override

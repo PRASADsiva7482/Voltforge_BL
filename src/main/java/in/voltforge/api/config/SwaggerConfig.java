@@ -16,10 +16,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class SwaggerConfig {
 
-    @Value("${keycloak.auth-server-url:http://localhost:8080}")
+    @Value("${keycloak.auth-server-url}")
     private String keycloakUrl;
 
-    @Value("${keycloak.realm:voltforge-realm}")
+    @Value("${keycloak.realm}")
     private String realm;
 
 

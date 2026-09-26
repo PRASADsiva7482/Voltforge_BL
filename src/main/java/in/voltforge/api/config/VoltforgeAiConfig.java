@@ -15,28 +15,28 @@ import java.time.Duration;
 @Configuration
 public class VoltforgeAiConfig {
 
-    @Value("${app.ai.model.url:http://localhost:2002/voltForge-ai}")
-    private String modelUrl = "http://localhost:2002/voltForge-ai";
+    @Value("${app.ai.model.url}")
+    private String modelUrl;
 
-    @Value("${app.ai.model.timeout:15}")
+    @Value("${app.ai.model.timeout}")
     private int timeoutSeconds = 15;
 
-    @Value("${app.ai.model.streaming-timeout:60}")
+    @Value("${app.ai.model.streaming-timeout}")
     private int streamingTimeoutSeconds = 60;
 
-    @Value("${app.ai.model.api-token:}")
-    private String apiToken = "";
+    @Value("${app.ai.model.api-token}")
+    private String apiToken;
 
-    @Value("${app.ai.environment:development}")
+    @Value("${app.ai.environment}")
     private String environment = "development";
 
-    @Value("${app.ai.gateway.max-request-bytes:2000000}")
+    @Value("${app.ai.gateway.max-request-bytes}")
     private int maxRequestBytes = 2_000_000;
 
-    @Value("${app.ai.gateway.max-concurrent-streams-per-user:2}")
+    @Value("${app.ai.gateway.max-concurrent-streams-per-user}")
     private int maxConcurrentStreamsPerUser = 2;
 
-    @Value("${app.ai.gateway.max-concurrent-streams-per-project:1}")
+    @Value("${app.ai.gateway.max-concurrent-streams-per-project}")
     private int maxConcurrentStreamsPerProject = 1;
 
     @PostConstruct

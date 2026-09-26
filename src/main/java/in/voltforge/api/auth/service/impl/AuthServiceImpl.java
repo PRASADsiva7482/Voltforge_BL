@@ -36,10 +36,17 @@ public class AuthServiceImpl implements AuthService {
         String displayName = buildDisplayName(firstName, lastName, username);
 
         Optional<User> existingUser = userRepository.findByKeycloakId(keycloakId);
+        if (existingUser.isEmpty() && username != null && !username.isBlank()) {
+            existingUser = userRepository.findByUsername(username);
+        }
+        if (existingUser.isEmpty() && email != null && !email.isBlank()) {
+            existingUser = userRepository.findByEmail(email);
+        }
 
         User user;
         if (existingUser.isPresent()) {
             user = existingUser.get();
+            user.setKeycloakId(keycloakId);
             // Update fields that may have changed in Keycloak
             user.setUsername(username != null ? username : user.getUsername());
             user.setEmail(email != null ? email : user.getEmail());

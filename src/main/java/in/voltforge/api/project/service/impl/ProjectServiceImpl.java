@@ -16,7 +16,6 @@ import in.voltforge.api.user.entity.User;
 import in.voltforge.api.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -303,7 +302,7 @@ public class ProjectServiceImpl implements ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", "keycloakId", keycloakId));
 
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
-        Page<Project> projectPage = projectRepository.findByOwnerId(user.getId(), pageRequest);
+        var projectPage = projectRepository.findByOwnerId(user.getId(), pageRequest);
 
         List<ProjectSummaryResponse> content = projectPage.getContent().stream()
                 .map(projectMapper::toSummaryResponse)
@@ -324,7 +323,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> getPublicProjects(int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Project> projectPage = projectRepository.findByIsPublicTrue(pageRequest);
+        var projectPage = projectRepository.findByIsPublicTrue(pageRequest);
 
         List<ProjectSummaryResponse> content = projectPage.getContent().stream()
                 .map(projectMapper::toSummaryResponse)
@@ -345,7 +344,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> searchPublicProjects(String query, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Project> projectPage = projectRepository.searchPublicProjects(query, pageRequest);
+        var projectPage = projectRepository.searchPublicProjects(query, pageRequest);
 
         List<ProjectSummaryResponse> content = projectPage.getContent().stream()
                 .map(projectMapper::toSummaryResponse)
@@ -366,7 +365,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> getTemplates(int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "forkCount"));
-        Page<Project> projectPage = projectRepository.findTemplates(pageRequest);
+        var projectPage = projectRepository.findTemplates(pageRequest);
 
         List<ProjectSummaryResponse> content = projectPage.getContent().stream()
                 .map(projectMapper::toSummaryResponse)

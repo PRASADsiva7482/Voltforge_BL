@@ -26,9 +26,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
-      # ── Scaled for heavy collaborative load (hundreds of concurrent WS sessions) ──
-      maximum-pool-size: 100
-      minimum-idle: 20
+      # Deployment capacity; the dev profile below uses a smaller local pool.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:100}
+      minimum-idle: ${DB_POOL_MIN_IDLE:20}
       idle-timeout: 30000
       max-lifetime: 1800000
       connection-timeout: 20000
@@ -173,3 +173,14 @@ spring:
         connectTimeout: 5000
         socketTimeout: 15000
         tcpKeepAlive: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    hikari:
+      # A local editor needs connections for DB operations, not for every socket.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:8}
+      minimum-idle: ${DB_POOL_MIN_IDLE:4}

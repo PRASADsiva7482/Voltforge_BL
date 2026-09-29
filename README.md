@@ -23,6 +23,24 @@ Supply the service configuration described by `.env.example` through your
 environment or deployment launcher. The HTTP port is `2001`, the context path
 is `/voltForge-app`, and health is `/voltForge-app/actuator/health`.
 
+## Database pool sizing
+
+The default `dev` profile keeps 4 idle database connections and permits up to 8.
+After a burst, excess connections become eligible for eviction after 30 seconds;
+the pool's periodic housekeeping means the reduction is not immediate.
+
+Set `SPRING_PROFILES_ACTIVE=prod` for a deployment. The packaged deployment
+defaults remain 20 idle / 100 maximum connections. The workspace's external
+Azure configuration supplies its own 10 idle / 50 maximum values.
+
+Set `DB_POOL_MIN_IDLE` and `DB_POOL_MAX_SIZE` to override the packaged defaults
+for either profile. Standard Spring `SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE` and
+`SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE` environment variables can also
+override external configuration. Keep the minimum between zero and the maximum,
+and choose deployment capacity against the database's connection limit and
+measured request concurrency. Open WebSocket sessions do not each need a
+dedicated database connection.
+
 ## Container build
 
 ```sh

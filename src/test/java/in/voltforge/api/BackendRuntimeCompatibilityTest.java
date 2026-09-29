@@ -3,6 +3,9 @@ package in.voltforge.api;
 import in.voltforge.api.ai.dto.AiChatRequest;
 import in.voltforge.api.auth.service.IdentityAvailabilityService;
 import in.voltforge.api.common.dto.ApiResponse;
+import in.voltforge.api.common.dto.PagedResponse;
+import in.voltforge.api.project.dto.ProjectSummaryResponse;
+import in.voltforge.api.project.mapper.ProjectMapper;
 import in.voltforge.api.project.entity.Project;
 import in.voltforge.api.project.repository.ProjectRepository;
 import in.voltforge.api.project.repository.ProjectShareRepository;
@@ -40,8 +43,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
+import org.hibernate.Session;
+import org.hibernate.resource.jdbc.spi.StatementInspector;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,6 +63,7 @@ import static org.mockito.Mockito.when;
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
         "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.properties.hibernate.session_factory.statement_inspector=in.voltforge.api.BackendRuntimeCompatibilityTest$SqlCapture",
         "spring.flyway.enabled=false",
         "server.address=127.0.0.1",
         "logging.level.root=WARN",
@@ -70,6 +78,7 @@ class BackendRuntimeCompatibilityTest {
     @Autowired ServletContext servletContext;
     @Autowired ProjectShareRepository shares;
     @Autowired ProjectService projectService;
+    @Autowired ProjectMapper projectMapper;
     @Autowired CollaborationController collaboration;
     @Autowired PlatformTransactionManager transactionManager;
     @MockitoBean JwtDecoder jwtDecoder;
@@ -209,6 +218,92 @@ class BackendRuntimeCompatibilityTest {
     void protectedEndpointsStillRequireAuthentication() throws Exception {
         assertThat(get("/api/v1/auth/me").statusCode()).isEqualTo(401);
         assertThat(get("/api/v1/admin/dashboard").statusCode()).isEqualTo(401);
+        assertThat(get("/api/v1/projects").statusCode()).isEqualTo(401);
+        assertThat(get("/api/v1/projects/public").statusCode()).isEqualTo(200);
+        assertThat(get("/api/v1/projects/public/search?query=missing").statusCode()).isEqualTo(200);
+        assertThat(get("/api/v1/projects/templates").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @Transactional
+    void projectListsPreserveSummariesAndPagingWithoutHydratingDocuments() {
+        User owner = users.saveAndFlush(User.builder().keycloakId("list-owner")
+                .username("list-owner").email("list-owner@example.invalid")
+                .displayName("List author").avatarUrl("/author.png").bio("Author biography").build());
+        User other = users.saveAndFlush(User.builder().keycloakId("list-other")
+                .username("list-other").email("list-other@example.invalid").build());
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            Project project = projects.saveAndFlush(Project.builder().owner(i < 4 ? owner : other)
+                    .name(i == 0 || i == 1 ? "NEEDLE " + i : "Project " + i)
+                    .description(i == 2 ? "Needle in description" : null)
+                    .isPublic(i != 0 && i != 4).forkCount(10 - i).viewCount(i * 2)
+                    .thumbnailUrl("/thumb-" + i + ".png")
+                    .tags(i == 0 || i == 1 ? "TeMpLaTe" : i == 3 ? "template,needle" : null)
+                    .canvasLayout(Map.of("nodes", "x".repeat(262144)))
+                    .componentConfig(Map.of("pcbLayout", "y".repeat(262144))).build());
+            ids.add(project.getId());
+            // Stable ordering independent of clock precision and auditing callbacks.
+            entityManager.createNativeQuery("UPDATE projects SET created_at = :created, updated_at = :updated WHERE id = :id")
+                    .setParameter("created", LocalDateTime.of(2026, 1, 1, 0, 0).plusDays(i))
+                    .setParameter("updated", LocalDateTime.of(2026, 1, 1, 0, 0).plusDays(6 - i))
+                    .setParameter("id", project.getId()).executeUpdate();
+        }
+        entityManager.clear();
+        List<ProjectSummaryResponse> expected = ids.stream()
+                .map(id -> projectMapper.toSummaryResponse(projects.findById(id).orElseThrow())).toList();
+        assertSummaryPages(page -> projectService.getUserProjects("list-owner", page, 2),
+                List.of(expected.get(0), expected.get(1), expected.get(2), expected.get(3)), 1);
+        assertSummaryPages(page -> projectService.getUserProjects("list-other", page, 2),
+                List.of(expected.get(4), expected.get(5)), 1);
+        assertSummaryPages(page -> projectService.getPublicProjects(page, 2),
+                List.of(expected.get(5), expected.get(3), expected.get(2), expected.get(1)), 0);
+        assertSummaryPages(page -> projectService.searchPublicProjects("nEeDlE", page, 2),
+                List.of(expected.get(3), expected.get(2), expected.get(1)), 0);
+        assertSummaryPages(page -> projectService.getTemplates(page, 2),
+                List.of(expected.get(1), expected.get(3)), 0);
+        assertSummaryPages(page -> projectService.searchPublicProjects("no-match", page, 2), List.of(), 0);
+        assertThatThrownBy(() -> projectService.getUserProjects("unknown-list-owner", 0, 2))
+                .isInstanceOf(in.voltforge.api.common.exception.ResourceNotFoundException.class);
+    }
+
+    private void assertSummaryPages(IntFunction<PagedResponse<ProjectSummaryResponse>> load,
+                                    List<ProjectSummaryResponse> expected, int managedEntities) {
+        int totalPages = (expected.size() + 1) / 2;
+        // Include the empty page beyond the last to exercise explicit count queries too.
+        for (int page = 0; page <= totalPages; page++) {
+            entityManager.clear();
+            List<String> sql = new ArrayList<>();
+            SqlCapture.CURRENT.set(sql);
+            PagedResponse<ProjectSummaryResponse> actual;
+            try { actual = load.apply(page); }
+            finally { SqlCapture.CURRENT.remove(); }
+            int from = Math.min(page * 2, expected.size());
+            assertThat(actual.getContent()).usingRecursiveComparison()
+                    .isEqualTo(expected.subList(from, Math.min(from + 2, expected.size())));
+            assertThat(actual.getPage()).isEqualTo(page);
+            assertThat(actual.getSize()).isEqualTo(2);
+            assertThat(actual.getTotalElements()).isEqualTo(expected.size());
+            assertThat(actual.getTotalPages()).isEqualTo(totalPages);
+            assertThat(actual.isFirst()).isEqualTo(page == 0);
+            assertThat(actual.isLast()).isEqualTo(page >= totalPages - 1);
+            assertThat(sql).isNotEmpty().allSatisfy(statement -> assertThat(statement)
+                    .doesNotContain("canvas_layout", "component_config", "code_files", "project_shares"));
+            if (page == totalPages && page > 0) assertThat(sql).anyMatch(statement -> statement.contains("count("));
+            assertThat(entityManager.unwrap(Session.class).getStatistics().getEntityCount()).isEqualTo(managedEntities);
+            assertThat(entityManager.unwrap(Session.class).getStatistics().getCollectionCount()).isZero();
+        }
+    }
+
+    public static class SqlCapture implements StatementInspector {
+        static final ThreadLocal<List<String>> CURRENT = new ThreadLocal<>();
+
+        @Override
+        public String inspect(String sql) {
+            List<String> statements = CURRENT.get();
+            if (statements != null) statements.add(sql);
+            return sql;
+        }
     }
 
     @Test

@@ -14,18 +14,35 @@ import java.util.List;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, String> {
 
-    Page<Project> findByOwnerId(String ownerId, Pageable pageable);
+    String SUMMARY_SELECT = """
+            SELECT new in.voltforge.api.project.repository.ProjectSummaryRow(
+                p.id, p.name, p.description, p.boardType, p.isPublic, p.forkCount, p.viewCount,
+                p.thumbnailUrl, p.tags, p.createdAt, p.updatedAt,
+                o.id, o.keycloakId, o.username, o.email, o.displayName, o.avatarUrl, o.bio,
+                o.role, o.accountStatus, o.createdAt, o.updatedAt)
+            FROM Project p LEFT JOIN p.owner o
+            """;
 
-    Page<Project> findByIsPublicTrue(Pageable pageable);
+    String PUBLIC_SEARCH = "p.isPublic = true AND " +
+            "(LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))";
 
-    @Query("SELECT p FROM Project p WHERE p.isPublic = true AND " +
-           "(LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
-    Page<Project> searchPublicProjects(@Param("query") String query, Pageable pageable);
+    @Query(value = SUMMARY_SELECT + " WHERE p.owner.id = :ownerId",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId")
+    Page<ProjectSummaryRow> findByOwnerId(@Param("ownerId") String ownerId, Pageable pageable);
 
-    @Query("SELECT p FROM Project p WHERE p.isPublic = true AND LOWER(p.tags) LIKE '%template%'")
-    Page<Project> findTemplates(Pageable pageable);
+    @Query(value = SUMMARY_SELECT + " WHERE p.isPublic = true",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.isPublic = true")
+    Page<ProjectSummaryRow> findByIsPublicTrue(Pageable pageable);
+
+    @Query(value = SUMMARY_SELECT + " WHERE " + PUBLIC_SEARCH,
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE " + PUBLIC_SEARCH)
+    Page<ProjectSummaryRow> searchPublicProjects(@Param("query") String query, Pageable pageable);
+
+    @Query(value = SUMMARY_SELECT + " WHERE p.isPublic = true AND LOWER(p.tags) LIKE '%template%'",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.isPublic = true AND LOWER(p.tags) LIKE '%template%'")
+    Page<ProjectSummaryRow> findTemplates(Pageable pageable);
 
     List<Project> findByForkedFromId(String projectId);
 

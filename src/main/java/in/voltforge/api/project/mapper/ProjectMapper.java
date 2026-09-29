@@ -5,6 +5,8 @@ import in.voltforge.api.project.dto.ProjectResponse;
 import in.voltforge.api.project.dto.ProjectSummaryResponse;
 import in.voltforge.api.project.entity.CodeFile;
 import in.voltforge.api.project.entity.Project;
+import in.voltforge.api.project.repository.ProjectSummaryRow;
+import in.voltforge.api.user.dto.UserResponse;
 import in.voltforge.api.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -59,6 +61,20 @@ public class ProjectMapper {
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();
+    }
+
+    public ProjectSummaryResponse toSummaryResponse(ProjectSummaryRow row) {
+        if (row == null) return null;
+        UserResponse owner = row.ownerId() == null ? null : UserResponse.builder()
+                .id(row.ownerId()).keycloakId(row.ownerKeycloakId()).username(row.ownerUsername())
+                .email(row.ownerEmail()).displayName(row.ownerDisplayName()).avatarUrl(row.ownerAvatarUrl())
+                .bio(row.ownerBio()).role(row.ownerRole()).accountStatus(row.ownerAccountStatus())
+                .createdAt(row.ownerCreatedAt()).updatedAt(row.ownerUpdatedAt()).build();
+        return ProjectSummaryResponse.builder()
+                .id(row.id()).name(row.name()).description(row.description()).boardType(row.boardType())
+                .isPublic(row.isPublic()).forkCount(row.forkCount()).viewCount(row.viewCount())
+                .thumbnailUrl(row.thumbnailUrl()).tags(row.tags()).owner(owner)
+                .createdAt(row.createdAt()).updatedAt(row.updatedAt()).build();
     }
 
     public CodeFileResponse toCodeFileResponse(CodeFile codeFile) {

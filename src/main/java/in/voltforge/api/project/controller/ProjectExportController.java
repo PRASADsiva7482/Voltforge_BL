@@ -6,15 +6,21 @@ import in.voltforge.api.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/v1/projects")
@@ -70,7 +76,8 @@ public class ProjectExportController {
         stats.put("forkCount", project.getForkCount());
         stats.put("codeFiles", project.getCodeFiles() != null ? project.getCodeFiles().size() : 0);
 
-        int componentCount = 0, wireCount = 0;
+        int componentCount = 0;
+        int wireCount = 0;
         if (project.getCanvasLayout() != null) {
             @SuppressWarnings("unchecked")
             var nodes = (List<?>) project.getCanvasLayout().get("nodes");
@@ -85,25 +92,17 @@ public class ProjectExportController {
         return ResponseEntity.ok(ApiResponse.success(stats));
     }
 
-    @GetMapping("/{projectId}/export/zip")
-    @Operation(summary = "Export project as ZIP file")
-    public ResponseEntity<byte[]> exportZip(
-            @PathVariable String projectId,
-            @AuthenticationPrincipal Jwt jwt) throws Exception {
-        return exportProject(projectId, jwt);
-    }
-
-    @GetMapping("/{projectId}/export")
+    @GetMapping({ "/{projectId}/export", "/{projectId}/export/zip" })
     @Operation(summary = "Export project source and diagram as ZIP file")
     public ResponseEntity<byte[]> exportProject(
             @PathVariable String projectId,
             @AuthenticationPrincipal Jwt jwt) throws Exception {
         var project = projectService.getProject(projectId, jwt != null ? jwt.getSubject() : null);
 
-        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             // Add README
-            java.util.zip.ZipEntry readmeEntry = new java.util.zip.ZipEntry("README.md");
+            ZipEntry readmeEntry = new ZipEntry("README.md");
             zos.putNextEntry(readmeEntry);
             String readme = "# " + project.getName() + "\n\n" + (project.getDescription() != null ? project.getDescription() : "");
             zos.write(readme.getBytes(StandardCharsets.UTF_8));
@@ -113,7 +112,7 @@ public class ProjectExportController {
             if (project.getCodeFiles() != null) {
                 for (var file : project.getCodeFiles()) {
                     String filename = safeArchiveFilename(file.getFilename());
-                    zos.putNextEntry(new java.util.zip.ZipEntry("src/" + filename));
+                    zos.putNextEntry(new ZipEntry("src/" + filename));
                     zos.write(file.getContent() != null ? file.getContent().getBytes(StandardCharsets.UTF_8) : new byte[0]);
                     zos.closeEntry();
                 }
@@ -126,15 +125,15 @@ public class ProjectExportController {
             diagram.put("canvasLayout", project.getCanvasLayout() != null ? project.getCanvasLayout() : Map.of("nodes", List.of(), "wires", List.of()));
             diagram.put("componentConfig", project.getComponentConfig() != null ? project.getComponentConfig() : Map.of());
 
-            zos.putNextEntry(new java.util.zip.ZipEntry("diagram.json"));
+            zos.putNextEntry(new ZipEntry("diagram.json"));
             zos.write(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(diagram));
             zos.closeEntry();
         }
 
         byte[] zipBytes = baos.toByteArray();
         return ResponseEntity.ok()
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + project.getName().replaceAll("[^a-zA-Z0-9.-]", "_") + ".zip\"")
-                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + project.getName().replaceAll("[^a-zA-Z0-9.-]", "_") + ".zip\"")
+                .header(HttpHeaders.CONTENT_TYPE, "application/zip")
                 .body(zipBytes);
     }
 
@@ -167,8 +166,8 @@ public class ProjectExportController {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> wires = (List<Map<String, Object>>) layout.getOrDefault("wires", List.of());
 
-        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             writeZipEntry(zos, "README.txt", "VoltForge generated Gerber set\n"
                     + "Wires without an explicit layer are placed on F_Cu.\nProject: " + project.getName() + "\n");
             writeZipEntry(zos, "board-F_Cu.gbr", hasPersistedPcb
@@ -195,8 +194,8 @@ public class ProjectExportController {
 
         byte[] zipBytes = baos.toByteArray();
         return ResponseEntity.ok()
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + project.getName().replaceAll("[^a-zA-Z0-9.-]", "_") + "_gerber.zip\"")
-                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + project.getName().replaceAll("[^a-zA-Z0-9.-]", "_") + "_gerber.zip\"")
+                .header(HttpHeaders.CONTENT_TYPE, "application/zip")
                 .body(zipBytes);
     }
 
@@ -208,8 +207,8 @@ public class ProjectExportController {
         return filename;
     }
 
-    private void writeZipEntry(java.util.zip.ZipOutputStream zos, String name, String content) throws java.io.IOException {
-        zos.putNextEntry(new java.util.zip.ZipEntry(name));
+    private void writeZipEntry(ZipOutputStream zos, String name, String content) throws IOException {
+        zos.putNextEntry(new ZipEntry(name));
         zos.write(content.getBytes(StandardCharsets.UTF_8));
         zos.closeEntry();
     }
@@ -248,13 +247,10 @@ public class ProjectExportController {
                 .append(bottomLayer ? "Bottom" : "Top").append(" Copper*\n")
                 .append("%FSLAX24Y24*%\n%MOMM*%\n%ADD10C,0.250*%\n");
 
-        // Footprint pads are part of the copper artwork too. Define one
-        // aperture per pad geometry so SMD/THT pads are not silently omitted
-        // from the manufacturing export.
         Map<String, Integer> padApertures = new LinkedHashMap<>();
         int nextAperture = 11;
         for (Map<String, Object> footprint : footprints) {
-            if (bottomLayer) continue; // persisted footprints are front-side by default
+            if (bottomLayer) continue;
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> pads = footprint.get("pads") instanceof List
                     ? (List<Map<String, Object>>) footprint.get("pads") : List.of();
@@ -314,13 +310,11 @@ public class ProjectExportController {
         double width = Math.max(0.05, number(pad.get("width")));
         double height = Math.max(0.05, number(pad.get("height")));
         String shape = String.valueOf(pad.getOrDefault("shape", "rect")).toLowerCase(Locale.ROOT);
-        if ("circle".equals(shape)) {
-            return String.format(Locale.ROOT, "C,%.3f", Math.max(width, height));
-        }
-        if ("oval".equals(shape)) {
-            return String.format(Locale.ROOT, "O,%.3fX%.3f", width, height);
-        }
-        return String.format(Locale.ROOT, "R,%.3fX%.3f", width, height);
+        return switch (shape) {
+            case "circle" -> "C,%.3f".formatted(Math.max(width, height));
+            case "oval" -> "O,%.3fX%.3f".formatted(width, height);
+            default -> "R,%.3fX%.3f".formatted(width, height);
+        };
     }
 
     private String buildPcbEdgeCuts(Map<String, Object> pcbLayout) {
@@ -430,7 +424,11 @@ public class ProjectExportController {
     }
 
     private String format(double value) {
-        return String.format(Locale.ROOT, "%07.3f", value).replace(".", "");
+        long scaled = Math.round(value * 1000.0);
+        if (scaled < 0) scaled = 0;
+        String s = Long.toString(scaled);
+        if (s.length() >= 7) return s;
+        return "0".repeat(7 - s.length()) + s;
     }
 
     private double number(Object value) {

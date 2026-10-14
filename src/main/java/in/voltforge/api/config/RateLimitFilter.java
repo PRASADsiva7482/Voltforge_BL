@@ -14,8 +14,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -29,17 +27,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Value("${app.rate-limit.trust-forwarded-headers}")
     private boolean trustForwardedHeaders;
 
-    private final Map<String, Bucket> bucketCache = new ConcurrentHashMap<>();
+    private final com.github.benmanes.caffeine.cache.Cache<String, Bucket> bucketCache = com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+            .maximumSize(MAX_TRACKED_CLIENTS)
+            .expireAfterAccess(Duration.ofMinutes(15))
+            .build();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String clientIp = getClientIp(request);
-        evictIfFull(clientIp);
-        Bucket bucket = bucketCache.computeIfAbsent(clientIp, this::createBucket);
+        Bucket bucket = bucketCache.get(clientIp, this::createBucket);
 
-        if (bucket.tryConsume(1)) {
+        if (bucket != null && bucket.tryConsume(1)) {
             filterChain.doFilter(request, response);
         } else {
             log.warn("Rate limit exceeded for IP: {}", clientIp);
@@ -49,13 +49,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
                     "{\"success\":false,\"message\":\"Rate limit exceeded. Try again later.\",\"errorCode\":\"RATE_LIMIT_EXCEEDED\"}"
             );
         }
-    }
-
-    private void evictIfFull(String clientIp) {
-        if (bucketCache.size() < MAX_TRACKED_CLIENTS || bucketCache.containsKey(clientIp)) {
-            return;
-        }
-        bucketCache.keySet().stream().findFirst().ifPresent(bucketCache::remove);
     }
 
     private Bucket createBucket(String key) {

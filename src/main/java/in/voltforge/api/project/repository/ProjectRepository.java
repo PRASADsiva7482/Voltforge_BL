@@ -50,6 +50,16 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
 
     long countByOwnerId(String ownerId);
 
+    @Query("""
+            SELECT new in.voltforge.api.project.repository.ProjectStatsRow(
+                COUNT(p),
+                COALESCE(SUM(CASE WHEN p.isPublic = true THEN 1L ELSE 0L END), 0L),
+                COALESCE(SUM(CASE WHEN p.createdAt >= CURRENT_DATE THEN 1L ELSE 0L END), 0L)
+            )
+            FROM Project p
+            """)
+    ProjectStatsRow getProjectStatsAggregate();
+
     @Query("SELECT COUNT(p) FROM Project p")
     long countAllProjects();
 

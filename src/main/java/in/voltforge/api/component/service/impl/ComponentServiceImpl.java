@@ -7,16 +7,18 @@ import in.voltforge.api.component.entity.ElectronicComponent;
 import in.voltforge.api.component.mapper.ComponentMapper;
 import in.voltforge.api.component.repository.ComponentRepository;
 import in.voltforge.api.component.service.ComponentService;
+import in.voltforge.api.config.CacheConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -27,27 +29,30 @@ public class ComponentServiceImpl implements ComponentService {
     private final ComponentMapper componentMapper;
 
     @Override
+    @Cacheable(CacheConfig.CACHE_COMPONENTS)
     @Transactional(readOnly = true)
     public List<ComponentResponse> getAllComponents() {
         return componentRepository.findAll().stream()
                 .map(componentMapper::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
+    @Cacheable(value = CacheConfig.CACHE_COMPONENTS, key = "'cat_' + #category")
     @Transactional(readOnly = true)
     public List<ComponentResponse> getComponentsByCategory(String category) {
-        return componentRepository.findByCategoryOrderBySortOrderAsc(category.toUpperCase()).stream()
+        return componentRepository.findByCategoryOrderBySortOrderAsc(category.toUpperCase(Locale.ROOT)).stream()
                 .map(componentMapper::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
+    @Cacheable(value = CacheConfig.CACHE_COMPONENTS, key = "'free'")
     @Transactional(readOnly = true)
     public List<ComponentResponse> getFreeComponents() {
         return componentRepository.findByIsPremiumFalseOrderBySortOrderAsc().stream()
                 .map(componentMapper::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
@@ -55,7 +60,7 @@ public class ComponentServiceImpl implements ComponentService {
     public List<ComponentResponse> searchComponents(String query) {
         return componentRepository.searchComponents(query).stream()
                 .map(componentMapper::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
@@ -67,12 +72,14 @@ public class ComponentServiceImpl implements ComponentService {
     }
 
     @Override
+    @Cacheable(value = CacheConfig.CACHE_COMPONENTS, key = "'categories'")
     @Transactional(readOnly = true)
     public List<String> getAllCategories() {
         return componentRepository.findAllCategories();
     }
 
     @Override
+    @CacheEvict(value = CacheConfig.CACHE_COMPONENTS, allEntries = true)
     @Transactional
     public ComponentResponse createCustomComponent(CustomComponentRequest request) {
         String type = request.getType();
@@ -105,6 +112,7 @@ public class ComponentServiceImpl implements ComponentService {
     }
 
     @Override
+    @Cacheable(value = CacheConfig.CACHE_COMPONENTS, key = "'community'")
     @Transactional(readOnly = true)
     public List<ComponentResponse> getCommunityComponents() {
         return componentRepository.findByTypeStartingWithOrderBySortOrderAsc("CUSTOM_").stream()
@@ -113,6 +121,6 @@ public class ComponentServiceImpl implements ComponentService {
                     return props != null && Boolean.TRUE.equals(props.get("community"));
                 })
                 .map(componentMapper::toResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 }

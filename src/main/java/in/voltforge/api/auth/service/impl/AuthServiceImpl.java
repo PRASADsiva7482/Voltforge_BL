@@ -35,13 +35,10 @@ public class AuthServiceImpl implements AuthService {
         String lastName = jwt.getClaimAsString("family_name");
         String displayName = buildDisplayName(firstName, lastName, username);
 
-        Optional<User> existingUser = userRepository.findByKeycloakId(keycloakId);
-        if (existingUser.isEmpty() && username != null && !username.isBlank()) {
-            existingUser = userRepository.findByUsername(username);
-        }
-        if (existingUser.isEmpty() && email != null && !email.isBlank()) {
-            existingUser = userRepository.findByEmail(email);
-        }
+        String lookupUsername = (username != null && !username.isBlank()) ? username : keycloakId;
+        String lookupEmail = (email != null && !email.isBlank()) ? email : (keycloakId + "@voltforge.in");
+
+        Optional<User> existingUser = userRepository.findByKeycloakIdOrUsernameOrEmail(keycloakId, lookupUsername, lookupEmail);
 
         User user;
         if (existingUser.isPresent()) {
@@ -72,7 +69,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public UserResponse getCurrentUser(Jwt jwt) {
         String keycloakId = extractKeycloakId(jwt);
         User user = userRepository.findByKeycloakId(keycloakId)

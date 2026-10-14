@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Configuration
@@ -91,7 +90,7 @@ public class SecurityConfig {
                 List<String> realmRoles = (List<String>) realmAccess.get("roles");
                 authorities.addAll(realmRoles.stream()
                         .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                        .collect(Collectors.toList()));
+                        .toList());
             }
 
             // Extract client-specific roles from every resource audience. This
@@ -108,7 +107,7 @@ public class SecurityConfig {
                                 .filter(String.class::isInstance)
                                 .map(String.class::cast)
                                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                                .collect(Collectors.toList()));
+                                .toList());
                     }
                 }
             }

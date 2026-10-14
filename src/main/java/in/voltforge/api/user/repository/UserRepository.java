@@ -18,6 +18,19 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     Optional<User> findByEmail(String email);
 
+    Optional<User> findByKeycloakIdOrUsernameOrEmail(String keycloakId, String username, String email);
+
+    @Query("""
+            SELECT new in.voltforge.api.user.repository.UserStatsRow(
+                COUNT(u),
+                COALESCE(SUM(CASE WHEN u.accountStatus = in.voltforge.api.common.enums.AccountStatus.ACTIVE THEN 1L ELSE 0L END), 0L),
+                COALESCE(SUM(CASE WHEN u.createdAt >= CURRENT_DATE THEN 1L ELSE 0L END), 0L),
+                COALESCE(SUM(CASE WHEN u.role = in.voltforge.api.common.enums.UserRole.ADMIN THEN 1L ELSE 0L END), 0L)
+            )
+            FROM User u
+            """)
+    UserStatsRow getUserStatsAggregate();
+
     boolean existsByKeycloakId(String keycloakId);
 
     boolean existsByUsername(String username);

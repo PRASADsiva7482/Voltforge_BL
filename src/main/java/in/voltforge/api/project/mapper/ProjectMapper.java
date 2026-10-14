@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -94,6 +93,6 @@ public class ProjectMapper {
         if (codeFiles == null) return Collections.emptyList();
         return codeFiles.stream()
                 .map(this::toCodeFileResponse)
-                .collect(Collectors.toList());
+                .toList();
     }
 }

@@ -2,27 +2,37 @@ package in.voltforge.api.project.service.impl;
 
 import in.voltforge.api.common.dto.PagedResponse;
 import in.voltforge.api.common.enums.BoardType;
+import in.voltforge.api.common.enums.SharePermission;
 import in.voltforge.api.common.exception.ConflictException;
 import in.voltforge.api.common.exception.ForbiddenException;
 import in.voltforge.api.common.exception.ResourceNotFoundException;
-import in.voltforge.api.project.dto.*;
+import in.voltforge.api.project.dto.CodeFileRequest;
+import in.voltforge.api.project.dto.CreateProjectRequest;
+import in.voltforge.api.project.dto.ProjectResponse;
+import in.voltforge.api.project.dto.ProjectSummaryResponse;
+import in.voltforge.api.project.dto.UpdateProjectRequest;
 import in.voltforge.api.project.entity.CodeFile;
 import in.voltforge.api.project.entity.Project;
 import in.voltforge.api.project.mapper.ProjectMapper;
 import in.voltforge.api.project.repository.ProjectRepository;
 import in.voltforge.api.project.repository.ProjectShareRepository;
+import in.voltforge.api.project.repository.ProjectSummaryRow;
 import in.voltforge.api.project.service.ProjectService;
 import in.voltforge.api.user.entity.User;
 import in.voltforge.api.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -87,7 +97,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
 
-        if (!canAccessProject(projectId, keycloakId)) {
+        if (!canAccessProject(project, keycloakId)) {
             throw new ForbiddenException("Access denied to project");
         }
 
@@ -103,7 +113,7 @@ public class ProjectServiceImpl implements ProjectService {
             if (user != null) {
                 List<Project> forks = projectRepository.findByOwnerIdAndForkedFromId(user.getId(), projectId);
                 if (!forks.isEmpty()) {
-                    response.setUserForkId(forks.get(0).getId());
+                    response.setUserForkId(forks.getFirst().getId());
                 }
             }
         }
@@ -115,6 +125,10 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional(readOnly = true)
     public boolean canAccessProject(String projectId, String keycloakId) {
         Project project = projectRepository.findById(projectId).orElse(null);
+        return canAccessProject(project, keycloakId);
+    }
+
+    public boolean canAccessProject(Project project, String keycloakId) {
         if (project == null) {
             return false;
         }
@@ -125,9 +139,14 @@ public class ProjectServiceImpl implements ProjectService {
             return false;
         }
 
+        // Fast path: owner matches keycloakId directly without querying user table
+        if (project.getOwner() != null && keycloakId.equals(project.getOwner().getKeycloakId())) {
+            return true;
+        }
+
         User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
         return user != null && (project.getOwner().getId().equals(user.getId())
-                || projectShareRepository.existsByProjectIdAndSharedWithUserId(projectId, user.getId()));
+                || projectShareRepository.existsByProjectIdAndSharedWithUserId(project.getId(), user.getId()));
     }
 
     @Override
@@ -135,7 +154,7 @@ public class ProjectServiceImpl implements ProjectService {
     public String getProjectRevision(String projectId, String keycloakId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
-        if (!canAccessProject(projectId, keycloakId)) {
+        if (!canAccessProject(project, keycloakId)) {
             throw new ForbiddenException("Access denied to project");
         }
         return project.getUpdatedAt() != null ? project.getUpdatedAt().toString() : null;
@@ -148,17 +167,27 @@ public class ProjectServiceImpl implements ProjectService {
             return false;
         }
         Project project = projectRepository.findById(projectId).orElse(null);
+        return canEditProject(project, keycloakId);
+    }
+
+    public boolean canEditProject(Project project, String keycloakId) {
+        if (project == null || keycloakId == null || keycloakId.isBlank()) {
+            return false;
+        }
+        if (project.getOwner() != null && keycloakId.equals(project.getOwner().getKeycloakId())) {
+            return true;
+        }
         User user = userRepository.findByKeycloakId(keycloakId).orElse(null);
-        if (project == null || user == null) {
+        if (user == null) {
             return false;
         }
         if (project.getOwner().getId().equals(user.getId())) {
             return true;
         }
-        return projectShareRepository.findByProjectIdAndSharedWithUserId(projectId, user.getId())
+        return projectShareRepository.findByProjectIdAndSharedWithUserId(project.getId(), user.getId())
                 .map(share -> share.getPermission() != null
-                        && (share.getPermission().name().equals("EDIT")
-                        || share.getPermission().name().equals("ADMIN")))
+                        && (share.getPermission() == SharePermission.EDIT
+                        || share.getPermission() == SharePermission.ADMIN))
                 .orElse(false);
     }
 
@@ -193,15 +222,15 @@ public class ProjectServiceImpl implements ProjectService {
 
         // Update code files
         if (request.getCodeFiles() != null) {
-            java.util.Map<String, CodeFileRequest> requestedFiles = request.getCodeFiles().stream()
-                    .collect(java.util.stream.Collectors.toMap(CodeFileRequest::getFilename, f -> f));
+            Map<String, CodeFileRequest> requestedFiles = request.getCodeFiles().stream()
+                    .collect(Collectors.toMap(CodeFileRequest::getFilename, f -> f));
 
             // Remove files not in the request
             project.getCodeFiles().removeIf(cf -> !requestedFiles.containsKey(cf.getFilename()));
 
             // Update existing and add new
             for (CodeFileRequest cfReq : request.getCodeFiles()) {
-                java.util.Optional<CodeFile> existingOpt = project.getCodeFiles().stream()
+                Optional<CodeFile> existingOpt = project.getCodeFiles().stream()
                         .filter(cf -> cf.getFilename().equals(cfReq.getFilename()))
                         .findFirst();
 
@@ -225,7 +254,7 @@ public class ProjectServiceImpl implements ProjectService {
         // Make the parent dirty even for code-only/no-op saves. @Version then
         // checks and advances the token during this flush, before the response
         // is mapped; a losing writer rolls back all child-file changes as well.
-        project.setUpdatedAt(java.time.LocalDateTime.now());
+        project.setUpdatedAt(LocalDateTime.now());
         project = projectRepository.saveAndFlush(project);
         log.info("Updated project '{}' by user '{}'", project.getName(), user.getUsername());
         return projectMapper.toResponse(project);
@@ -302,74 +331,38 @@ public class ProjectServiceImpl implements ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("User", "keycloakId", keycloakId));
 
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
-        var projectPage = projectRepository.findByOwnerId(user.getId(), pageRequest);
-
-        List<ProjectSummaryResponse> content = projectPage.getContent().stream()
-                .map(projectMapper::toSummaryResponse)
-                .collect(Collectors.toList());
-
-        return PagedResponse.<ProjectSummaryResponse>builder()
-                .content(content)
-                .page(projectPage.getNumber())
-                .size(projectPage.getSize())
-                .totalElements(projectPage.getTotalElements())
-                .totalPages(projectPage.getTotalPages())
-                .first(projectPage.isFirst())
-                .last(projectPage.isLast())
-                .build();
+        Page<ProjectSummaryRow> projectPage = projectRepository.findByOwnerId(user.getId(), pageRequest);
+        return toPagedSummaryResponse(projectPage);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> getPublicProjects(int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        var projectPage = projectRepository.findByIsPublicTrue(pageRequest);
-
-        List<ProjectSummaryResponse> content = projectPage.getContent().stream()
-                .map(projectMapper::toSummaryResponse)
-                .collect(Collectors.toList());
-
-        return PagedResponse.<ProjectSummaryResponse>builder()
-                .content(content)
-                .page(projectPage.getNumber())
-                .size(projectPage.getSize())
-                .totalElements(projectPage.getTotalElements())
-                .totalPages(projectPage.getTotalPages())
-                .first(projectPage.isFirst())
-                .last(projectPage.isLast())
-                .build();
+        Page<ProjectSummaryRow> projectPage = projectRepository.findByIsPublicTrue(pageRequest);
+        return toPagedSummaryResponse(projectPage);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> searchPublicProjects(String query, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        var projectPage = projectRepository.searchPublicProjects(query, pageRequest);
-
-        List<ProjectSummaryResponse> content = projectPage.getContent().stream()
-                .map(projectMapper::toSummaryResponse)
-                .collect(Collectors.toList());
-
-        return PagedResponse.<ProjectSummaryResponse>builder()
-                .content(content)
-                .page(projectPage.getNumber())
-                .size(projectPage.getSize())
-                .totalElements(projectPage.getTotalElements())
-                .totalPages(projectPage.getTotalPages())
-                .first(projectPage.isFirst())
-                .last(projectPage.isLast())
-                .build();
+        Page<ProjectSummaryRow> projectPage = projectRepository.searchPublicProjects(query, pageRequest);
+        return toPagedSummaryResponse(projectPage);
     }
 
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<ProjectSummaryResponse> getTemplates(int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "forkCount"));
-        var projectPage = projectRepository.findTemplates(pageRequest);
+        Page<ProjectSummaryRow> projectPage = projectRepository.findTemplates(pageRequest);
+        return toPagedSummaryResponse(projectPage);
+    }
 
+    private PagedResponse<ProjectSummaryResponse> toPagedSummaryResponse(Page<ProjectSummaryRow> projectPage) {
         List<ProjectSummaryResponse> content = projectPage.getContent().stream()
                 .map(projectMapper::toSummaryResponse)
-                .collect(Collectors.toList());
+                .toList();
 
         return PagedResponse.<ProjectSummaryResponse>builder()
                 .content(content)

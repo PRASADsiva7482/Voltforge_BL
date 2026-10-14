@@ -98,6 +98,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
 
     private final JsonMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
+    private volatile WebClient remoteWebClient;
 
     @Value("${app.simulation.compiler.mode}")
     private String compilerMode;
@@ -110,6 +111,19 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
 
     @Value("${app.simulation.compiler.timeout-seconds}")
     private int timeoutSeconds;
+
+    private WebClient getOrCreateWebClient() {
+        WebClient client = this.remoteWebClient;
+        if (client == null) {
+            synchronized (this) {
+                client = this.remoteWebClient;
+                if (client == null) {
+                    this.remoteWebClient = client = webClientBuilder.build();
+                }
+            }
+        }
+        return client;
+    }
 
     @Override
     public FirmwareCompileResponse compile(FirmwareCompileRequest request) {
@@ -136,7 +150,7 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
     private FirmwareCompileResponse compileWithRemoteService(FirmwareCompileRequest request, BoardType boardType,
             CompilerTarget target) {
         try {
-            String responseBody = webClientBuilder.build()
+            String responseBody = getOrCreateWebClient()
                     .post()
                     .uri(remoteCompilerUrl)
                     .contentType(MediaType.APPLICATION_JSON)

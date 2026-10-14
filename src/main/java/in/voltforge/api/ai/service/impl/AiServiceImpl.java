@@ -35,6 +35,23 @@ import reactor.core.publisher.SignalType;
 @Service
 public class AiServiceImpl implements AiService {
 
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<Map<String, Object>>> MAP_LIST_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<Map<String, String>>> STRING_MAP_LIST_TYPE = new TypeReference<>() {};
+    private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_STRING_TYPE = new ParameterizedTypeReference<>() {};
+    private static final String FALLBACK_CODE = """
+            // VoltForge AI fallback code
+            #include <Arduino.h>
+
+            void setup() {
+              Serial.begin(9600);
+            }
+
+            void loop() {
+              delay(1000);
+            }
+            """;
+
     private final WebClient voltforgeAiWebClient;
     private final WebClient voltforgeAiStreamingClient;
     private final VoltforgeAiConfig aiConfig;
@@ -201,7 +218,7 @@ public class AiServiceImpl implements AiService {
                         .retrieve()
                         // bodyToFlux is deliberately returned directly. Reactor
                         // cancellation closes the upstream HTTP response.
-                        .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
+                        .bodyToFlux(SSE_STRING_TYPE)
                         .doOnNext(event -> telemetry.observeStreamEvent(
                                 observation,
                                 event.event(),
@@ -337,7 +354,7 @@ public class AiServiceImpl implements AiService {
     public Map<String, Object> setMemoryPreference(String userId, String projectId, String sessionId,
                                                     AiMemoryPreferenceRequest request) {
         return memoryRequest(HttpMethod.PUT, "/api/v1/model/memory/preferences",
-                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                objectMapper.convertValue(request, MAP_TYPE),
                 userId, projectId, sessionId);
     }
 
@@ -345,7 +362,7 @@ public class AiServiceImpl implements AiService {
     public Map<String, Object> createMemoryEntry(String userId, String projectId, String sessionId,
                                                  AiMemoryWriteRequest request) {
         return memoryRequest(HttpMethod.POST, "/api/v1/model/memory/entries",
-                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                objectMapper.convertValue(request, MAP_TYPE),
                 userId, projectId, sessionId);
     }
 
@@ -353,7 +370,7 @@ public class AiServiceImpl implements AiService {
     public Map<String, Object> correctMemoryEntry(String userId, String projectId, String sessionId,
                                                   String memoryId, AiMemoryCorrectionRequest request) {
         return memoryRequest(HttpMethod.PATCH, "/api/v1/model/memory/entries/" + encodePath(memoryId),
-                objectMapper.convertValue(request, new TypeReference<Map<String, Object>>() {}),
+                objectMapper.convertValue(request, MAP_TYPE),
                 userId, projectId, sessionId);
     }
 
@@ -483,13 +500,13 @@ public class AiServiceImpl implements AiService {
     @Override
     public Map<String, Object> getHardwareCoverage() {
         JsonNode data = get("/api/v1/model/hardware-coverage");
-        return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+        return objectMapper.convertValue(data, MAP_TYPE);
     }
 
     @Override
     public Map<String, Object> getComponentCoverage() {
         JsonNode data = get("/api/v1/model/component-coverage");
-        return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+        return objectMapper.convertValue(data, MAP_TYPE);
     }
 
     @Override
@@ -497,7 +514,7 @@ public class AiServiceImpl implements AiService {
         log.info("Delegating PCB DRC to VoltForge AI microservice");
         try {
             JsonNode data = post("/api/v1/model/circuit/drc-check", buildPcbManufacturingBody(request));
-            return objectMapper.convertValue(data, new TypeReference<Map<String, Object>>() {});
+            return objectMapper.convertValue(data, MAP_TYPE);
         } catch (Exception e) {
             log.error("AI PCB DRC request failed (errorType={})", e.getClass().getSimpleName());
             Map<String, Object> fallback = new LinkedHashMap<>();
@@ -654,7 +671,7 @@ public class AiServiceImpl implements AiService {
                 .bodyToMono(JsonNode.class)
                 .block(Duration.ofSeconds(aiConfig.getTimeoutSeconds()));
         JsonNode value = unwrapData(response);
-        return objectMapper.convertValue(value, new TypeReference<Map<String, Object>>() {});
+        return objectMapper.convertValue(value, MAP_TYPE);
     }
 
     private void addMemoryIdentityHeaders(WebClient.RequestHeadersSpec<?> request,
@@ -694,13 +711,10 @@ public class AiServiceImpl implements AiService {
         List<Map<String, Object>> components = request != null && request.getComponents() != null
                 ? request.getComponents()
                 : Collections.emptyList();
-        if ((components == null || components.isEmpty()) && request != null) {
-            components = parseComponentsFromPrompt(request.getPrompt());
-        }
 
         body.put("boardType", boardType);
         body.put("prompt", request != null ? defaultString(request.getPrompt(), "") : "");
-        body.put("components", components != null ? components : Collections.emptyList());
+        body.put("components", components);
         body.put("wires", request != null && request.getWires() != null ? request.getWires() : Collections.emptyList());
         body.put("code", request != null ? defaultString(request.getCode(), "") : "");
         body.put("context", request != null ? defaultString(request.getContext(), "") : "");
@@ -786,7 +800,7 @@ public class AiServiceImpl implements AiService {
         if (value == null) {
             return Collections.emptyList();
         }
-        return objectMapper.convertValue(value, new TypeReference<List<Map<String, Object>>>() {});
+        return objectMapper.convertValue(value, MAP_LIST_TYPE);
     }
 
     private Map<String, Object> readMap(JsonNode data, String field) {
@@ -794,31 +808,31 @@ public class AiServiceImpl implements AiService {
         if (!node.isObject()) {
             return null;
         }
-        return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
+        return objectMapper.convertValue(node, MAP_TYPE);
     }
 
     private List<Map<String, Object>> readMapList(JsonNode data, String field) {
         JsonNode node = data.path(field);
-        if (!node.isArray()) {
+        if (!node.isArray() || node.isEmpty()) {
             return Collections.emptyList();
         }
-        return objectMapper.convertValue(node, new TypeReference<List<Map<String, Object>>>() {});
+        return objectMapper.convertValue(node, MAP_LIST_TYPE);
     }
 
     private List<Map<String, String>> readStringMapList(JsonNode data, String field) {
         JsonNode node = data.path(field);
-        if (!node.isArray()) {
+        if (!node.isArray() || node.isEmpty()) {
             return Collections.emptyList();
         }
-        return objectMapper.convertValue(node, new TypeReference<List<Map<String, String>>>() {});
+        return objectMapper.convertValue(node, STRING_MAP_LIST_TYPE);
     }
 
     private List<String> readStringList(JsonNode data, String field) {
         JsonNode node = data.path(field);
-        if (!node.isArray()) {
+        if (!node.isArray() || node.isEmpty()) {
             return Collections.emptyList();
         }
-        List<String> values = new ArrayList<>();
+        List<String> values = new ArrayList<>(node.size());
         for (JsonNode item : node) {
             values.add(item.asString());
         }
@@ -843,54 +857,7 @@ public class AiServiceImpl implements AiService {
         return value != null ? value : "";
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> parseComponentsFromPrompt(String prompt) {
-        List<Map<String, Object>> components = new ArrayList<>();
-        if (prompt == null) return components;
-
-        java.util.regex.Pattern compPattern = java.util.regex.Pattern.compile(
-                "-\\s+([^:]+):\\s+(.+?)\\s+\\(([A-Z0-9_]+)\\)\\s+pins:\\s+(.+)",
-                java.util.regex.Pattern.CASE_INSENSITIVE);
-
-        for (String line : prompt.split("\\n")) {
-            java.util.regex.Matcher matcher = compPattern.matcher(line.trim());
-            if (!matcher.find()) {
-                continue;
-            }
-            String compId = matcher.group(1).trim();
-            String compName = matcher.group(2).trim();
-            String compType = matcher.group(3).trim();
-            String pinsStr = matcher.group(4).trim();
-
-            List<Map<String, Object>> pins = new ArrayList<>();
-            for (String pinEntry : pinsStr.split(",\\s*")) {
-                String[] parts = pinEntry.trim().split("/", 2);
-                if (parts.length >= 1) {
-                    Map<String, Object> pin = new HashMap<>();
-                    pin.put("id", parts[0].trim());
-                    pin.put("name", parts.length > 1 ? parts[1].trim() : parts[0].trim());
-                    pins.add(pin);
-                }
-            }
-
-            Map<String, Object> comp = new HashMap<>();
-            comp.put("id", compId);
-            comp.put("name", compName);
-            comp.put("type", compType);
-            comp.put("pins", pins);
-            components.add(comp);
-        }
-        return components;
-    }
-
     private String generateFallbackCode(String prompt) {
-        return "// VoltForge AI fallback code\n" +
-                "#include <Arduino.h>\n\n" +
-                "void setup() {\n" +
-                "  Serial.begin(9600);\n" +
-                "}\n\n" +
-                "void loop() {\n" +
-                "  delay(1000);\n" +
-                "}\n";
+        return FALLBACK_CODE;
     }
 }

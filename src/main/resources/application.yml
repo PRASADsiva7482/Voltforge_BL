@@ -20,9 +20,9 @@ spring:
 
   # ── Datasource ──────────────────────────────────────────────────────────────
   datasource:
-    url: jdbc:mysql://localhost:3306/voltforge_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
-    username: root
-    password: SIva@7482
+    url: jdbc:mysql://100.73.197.23:3306/voltforge_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:SIva@7482}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       pool-name: VoltForge-HikariCP
@@ -83,23 +83,23 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8080/realms/voltforge-realm
-          jwk-set-uri: http://localhost:8080/realms/voltforge-realm/protocol/openid-connect/certs
+          issuer-uri: https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm
+          jwk-set-uri: https://copious-opposite-mangle.ngrok-free.dev/realms/voltforge-realm/protocol/openid-connect/certs
 
 # ── Keycloak Custom Properties ───────────────────────────────────────────────
 keycloak:
   enabled: false
-  auth-server-url: http://localhost:8080
+  auth-server-url: https://copious-opposite-mangle.ngrok-free.dev
   realm: voltforge-realm
   resource: VOLT-Canvas
   credentials:
-    secret: BpJfF6q1sdld27MOOXonOFC84GZlHyrC
+    secret: ${KEYCLOAK_CLIENT_SECRET:BpJfF6q1sdld27MOOXonOFC84GZlHyrC}
 
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app:
   cors:
-    allowed-origins: http://localhost:3000
+    allowed-origins: http://localhost:3000,http://localhost:5173,https://copious-opposite-mangle.ngrok-free.dev
     allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
     allowed-headers: "*"
     allow-credentials: true
@@ -116,7 +116,7 @@ app:
       timeout: 15
       streaming-timeout: 60
       # Private backend-to-AI credential. It is never returned to the browser.
-      api-token: ""
+      api-token: "${VOLTFORGE_AI_API_TOKEN:vfa_sec_9f7a8b3c1d2e4f5a6b7c8d9e0f1a2b3c}"
     gateway:
       max-request-bytes: 2000000
       max-concurrent-streams-per-user: 2

@@ -92,5 +92,11 @@ public enum BoardType {
     CH32V003,
     CH32V203,
     RISC_V_SIPEED_LONGAN_NANO,
-    RISC_V_VISIONFIVE
+    RISC_V_VISIONFIVE;
+
+    @com.fasterxml.jackson.annotation.JsonCreator
+    public static BoardType fromId(String id) {
+        // Never interpret an ordinal, display label or unknown ID as a default board.
+        return id == null ? null : BoardType.valueOf(id);
+    }
 }

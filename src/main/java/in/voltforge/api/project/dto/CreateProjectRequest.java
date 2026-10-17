@@ -2,6 +2,7 @@ package in.voltforge.api.project.dto;
 
 import in.voltforge.api.common.enums.BoardType;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
@@ -25,6 +26,7 @@ public class CreateProjectRequest {
     @Size(max = 5000, message = "Description must not exceed 5000 characters")
     private String description;
 
+    @NotNull(message = "Choose a supported development board")
     private BoardType boardType;
 
     private Map<String, Object> canvasLayout;

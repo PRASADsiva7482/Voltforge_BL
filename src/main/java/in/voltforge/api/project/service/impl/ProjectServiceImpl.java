@@ -11,6 +11,8 @@ import in.voltforge.api.project.dto.CreateProjectRequest;
 import in.voltforge.api.project.dto.ProjectResponse;
 import in.voltforge.api.project.dto.ProjectSummaryResponse;
 import in.voltforge.api.project.dto.UpdateProjectRequest;
+import in.voltforge.api.project.dto.ProjectValidationException;
+import in.voltforge.api.simulation.service.impl.FirmwareCompilerServiceImpl;
 import in.voltforge.api.project.entity.CodeFile;
 import in.voltforge.api.project.entity.Project;
 import in.voltforge.api.project.mapper.ProjectMapper;
@@ -45,17 +47,53 @@ public class ProjectServiceImpl implements ProjectService {
     private final ProjectShareRepository projectShareRepository;
     private final ProjectMapper projectMapper;
 
+    private static final java.util.Set<String> DISALLOWED_PROJECT_NAMES = java.util.Set.of(
+            "untitled circuit",
+            "untitled",
+            "untitled project"
+    );
+
+    private static String validateName(String value) {
+        String name = value == null ? "" : trimProjectText(value);
+        if (name.isEmpty()) throw new ProjectValidationException("name", "Project name is required");
+        if (DISALLOWED_PROJECT_NAMES.contains(name.toLowerCase())) {
+            throw new ProjectValidationException("name", "Project name cannot be 'Untitled circuit'");
+        }
+        if (name.length() > 200) throw new ProjectValidationException("name", "Project name must not exceed 200 characters");
+        return name;
+    }
+
+    private static String validateDescription(String value) {
+        if (value == null) return null;
+        String description = trimProjectText(value);
+        if (description.length() > 5000) throw new ProjectValidationException("description", "Description must not exceed 5000 characters");
+        return description;
+    }
+
+    private static void validateBoard(BoardType boardType) {
+        if (!FirmwareCompilerServiceImpl.hasRegisteredTarget(boardType)) {
+            throw new ProjectValidationException("boardType", "Choose a supported development board");
+        }
+    }
+
+    private static String trimProjectText(String value) {
+        return value.replaceAll("(?U)^[\\s\\uFEFF]+|[\\s\\uFEFF]+$", "");
+    }
+
     @Override
     @Transactional(timeout = 20)
     public ProjectResponse createProject(String keycloakId, CreateProjectRequest request) {
+        String name = validateName(request.getName());
+        String description = validateDescription(request.getDescription());
+        validateBoard(request.getBoardType());
         User owner = userRepository.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "keycloakId", keycloakId));
 
         Project project = Project.builder()
                 .owner(owner)
-                .name(request.getName())
-                .description(request.getDescription())
-                .boardType(request.getBoardType() != null ? request.getBoardType() : BoardType.ARDUINO_UNO)
+                .name(name)
+                .description(description)
+                .boardType(request.getBoardType())
                 .canvasLayout(request.getCanvasLayout())
                 .componentConfig(request.getComponentConfig())
                 .isPublic(request.getIsPublic() != null ? request.getIsPublic() : false)
@@ -212,8 +250,12 @@ public class ProjectServiceImpl implements ProjectService {
                     "The project changed since this editor state was loaded. Reload it before saving.");
         }
 
-        if (request.getName() != null) project.setName(request.getName());
-        if (request.getDescription() != null) project.setDescription(request.getDescription());
+        // Validate before mutating. Unchanged legacy board IDs remain saveable.
+        String name = request.getName() != null ? validateName(request.getName()) : project.getName();
+        String description = request.getDescription() != null ? validateDescription(request.getDescription()) : project.getDescription();
+        if (request.getBoardType() != null && request.getBoardType() != project.getBoardType()) validateBoard(request.getBoardType());
+        project.setName(name);
+        project.setDescription(description);
         if (request.getBoardType() != null) project.setBoardType(request.getBoardType());
         if (request.getCanvasLayout() != null) project.setCanvasLayout(request.getCanvasLayout());
         if (request.getComponentConfig() != null) project.setComponentConfig(request.getComponentConfig());

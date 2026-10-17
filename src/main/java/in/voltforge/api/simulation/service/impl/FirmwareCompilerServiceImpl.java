@@ -97,6 +97,11 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
             Map.entry(BoardType.ATMEL_AVR_ATTINY, target("ATTinyCore:avr:attinyx5")));
 
     private final JsonMapper objectMapper;
+
+    /** Registered targets, independent of whether this deployment has their toolchains installed. */
+    public static boolean hasRegisteredTarget(BoardType boardType) {
+        return boardType != null && COMPILER_TARGETS.containsKey(boardType);
+    }
     private final WebClient.Builder webClientBuilder;
     private volatile WebClient remoteWebClient;
 

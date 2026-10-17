@@ -29,6 +29,17 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(in.voltforge.api.project.dto.ProjectValidationException.class)
+    public ResponseEntity<ApiResponse<Map<String, String>>> handleProjectValidation(in.voltforge.api.project.dto.ProjectValidationException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.<Map<String, String>>builder()
+                .success(false).message("Validation failed").errorCode("VALIDATION_ERROR").data(ex.getFields()).build());
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error("Invalid request: check boardType and field values", "INVALID_REQUEST"));
+    }
+
     @ExceptionHandler(PayloadTooLargeException.class)
     public ResponseEntity<ApiResponse<Void>> handleProjectSize(PayloadTooLargeException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)

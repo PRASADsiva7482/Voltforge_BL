@@ -111,7 +111,7 @@ class BackendRuntimeCompatibilityTest {
                 .username("large-owner").email("large-owner@example.invalid").build());
         String id = null;
         try {
-            var created = projectService.createProject("large-owner", CreateProjectRequest.builder().name("Large save").build());
+            var created = projectService.createProject("large-owner", CreateProjectRequest.builder().name("Large save").boardType(in.voltforge.api.common.enums.BoardType.ARDUINO_UNO).build());
             id = created.getId();
             var canvas = Map.<String, Object>of("notes", "Ω".repeat(550000));
             var pcb = Map.<String, Object>of("pcbLayout", Map.of("notes", "x".repeat(600000)));
@@ -139,7 +139,7 @@ class BackendRuntimeCompatibilityTest {
     void concurrentVersionedWritesRollBackTheLosingChildDocument() throws Exception {
         User owner = users.saveAndFlush(User.builder().keycloakId("race-owner")
                 .username("race-owner").email("race-owner@example.invalid").build());
-        var created = projectService.createProject("race-owner", CreateProjectRequest.builder().name("Atomic race").build());
+        var created = projectService.createProject("race-owner", CreateProjectRequest.builder().name("Atomic race").boardType(in.voltforge.api.common.enums.BoardType.ARDUINO_UNO).build());
         var barrier = new java.util.concurrent.CyclicBarrier(2);
         try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
             var tasks = java.util.stream.IntStream.range(0, 2).mapToObj(writer -> executor.submit(() -> {
@@ -347,6 +347,93 @@ class BackendRuntimeCompatibilityTest {
         assertThat(loaded.getCreatedAt()).isNotNull();
         assertThat(loaded.getUpdatedAt()).isNotNull();
         assertThat(loaded.getOwner().getId()).isEqualTo(owner.getId());
+    }
+
+    @Test
+    void projectHttpValidationRejectsBlankOversizedMissingAndUnknownBoards() throws Exception {
+        when(jwtDecoder.decode("validation-token")).thenReturn(Jwt.withTokenValue("validation-token")
+                .header("alg", "RS256").subject("validation-user").build());
+        for (String name : List.of("", "   ", "\u00a0\uFEFF", "x".repeat(201), "Untitled circuit", "untitled circuit", "UNTITLED CIRCUIT", "untitled", "Untitled Project")) {
+            assertThat(projectRequest("POST", "", "validation-token", mapper.writeValueAsString(Map.of("name", name, "boardType", "ESP32"))).statusCode()).isEqualTo(400);
+        }
+        for (String board : List.of("null", "\"INVALID_BOARD\"", "\"RASPBERRY_PI_5\"", "0", "\"Arduino Uno R3\"")) {
+            assertThat(projectRequest("POST", "", "validation-token", "{\"name\":\"Valid\",\"boardType\":" + board + "}").statusCode()).isEqualTo(400);
+        }
+        assertThat(projectRequest("POST", "", "validation-token", "{\"name\":\"Valid\"}").statusCode()).isEqualTo(400);
+        assertThat(projectRequest("POST", "", "validation-token", mapper.writeValueAsString(Map.of("name", "Valid", "boardType", "ESP32", "description", "x".repeat(5001)))).statusCode()).isEqualTo(400);
+        assertThat(projectRequest("POST", "", null, "{\"name\":\"Valid\",\"boardType\":\"ESP32\"}").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void projectHttpCreationReadSaveAndReopenPreserveBoardAndPrivacy() throws Exception {
+        User owner = users.saveAndFlush(User.builder().keycloakId("flow-owner").username("flow-owner").email("flow-owner@example.invalid").build());
+        User other = users.saveAndFlush(User.builder().keycloakId("flow-other").username("flow-other").email("flow-other@example.invalid").build());
+        for (String subject : List.of("flow-owner", "flow-other")) when(jwtDecoder.decode(subject)).thenReturn(Jwt.withTokenValue(subject).header("alg", "RS256").subject(subject).build());
+        List<String> ids = new ArrayList<>();
+        try {
+            for (boolean isPublic : List.of(false, true)) {
+                var layout = Map.of("nodes", List.of(Map.of("id", "project-board", "type", "ESP32", "x", 120)), "wires", List.of());
+                var body = mapper.writeValueAsString(Map.of("name", "  Same name  ", "description", "  description  ", "boardType", "ESP32", "isPublic", isPublic, "canvasLayout", layout,
+                        "codeFiles", List.of(Map.of("filename", "main.ino", "content", "// ESP32 firmware", "language", "cpp"))));
+                var created = projectRequest("POST", "", "flow-owner", body);
+                assertThat(created.statusCode()).isEqualTo(201);
+                var data = mapper.readTree(created.body()).path("data");
+                String id = data.path("id").asString(); ids.add(id);
+                assertThat(data.path("name").asString()).isEqualTo("Same name");
+                assertThat(data.path("description").asString()).isEqualTo("description");
+                assertThat(data.path("boardType").asString()).isEqualTo("ESP32");
+                assertThat(data.path("isPublic").asBoolean()).isEqualTo(isPublic);
+                assertThat(projectRequest("GET", "/" + id, null, null).statusCode()).isEqualTo(isPublic ? 200 : 403);
+                assertThat(projectRequest("GET", "/" + id, "flow-other", null).statusCode()).isEqualTo(isPublic ? 200 : 403);
+                var update = mapper.writeValueAsString(Map.of("expectedRevision", data.path("documentRevision").asString(), "boardType", "ESP32", "canvasLayout", Map.of("nodes", List.of(Map.of("id", "project-board", "type", "ESP32", "x", 300)), "wires", List.of())));
+                assertThat(projectRequest("PUT", "/" + id, "flow-other", update).statusCode()).isEqualTo(403);
+                assertThat(projectRequest("PUT", "/" + id, "flow-owner", update).statusCode()).isEqualTo(200);
+                var reopened = mapper.readTree(projectRequest("GET", "/" + id, "flow-owner", null).body()).path("data");
+                assertThat(reopened.path("id").asString()).isEqualTo(id);
+                assertThat(reopened.path("boardType").asString()).isEqualTo("ESP32");
+                assertThat(reopened.path("canvasLayout").path("nodes").get(0).path("x").asInt()).isEqualTo(300);
+                assertThat(reopened.path("codeFiles").get(0).path("content").asString()).isEqualTo("// ESP32 firmware");
+                assertThat(reopened.path("isPublic").asBoolean()).isEqualTo(isPublic);
+                assertThat(projectRequest("PUT", "/" + id, "flow-owner", update).statusCode()).isEqualTo(409);
+            }
+            var listed = projectService.getUserProjects("flow-owner", 0, 20);
+            assertThat(listed.getContent()).hasSize(2).allSatisfy(project -> assertThat(project.getBoardType()).isEqualTo(in.voltforge.api.common.enums.BoardType.ESP32));
+        } finally {
+            for (String id : ids) projectService.deleteProject(id, "flow-owner");
+            users.deleteById(owner.getId()); users.deleteById(other.getId());
+        }
+    }
+
+    @Test
+    void optionalDescriptionAndLegacyTargetsRemainSaveable() {
+        var board = in.voltforge.api.common.enums.BoardType.RASPBERRY_PI_5;
+        User owner = users.saveAndFlush(User.builder().keycloakId("legacy-flow").username("legacy-flow").email("legacy-flow@example.invalid").build());
+        Project legacy = projects.saveAndFlush(Project.builder().owner(owner).name("Old project").boardType(board).build());
+        String createdId = null;
+        try {
+            var created = projectService.createProject("legacy-flow", CreateProjectRequest.builder().name("  Optional  ").boardType(in.voltforge.api.common.enums.BoardType.ARDUINO_NANO).build());
+            createdId = created.getId();
+            assertThat(created.getDescription()).isNull();
+            assertThat(created.getIsPublic()).isFalse();
+            var saved = projectService.updateProject(legacy.getId(), "legacy-flow", UpdateProjectRequest.builder().expectedRevision("0").boardType(board).description("   ").build());
+            assertThat(saved.getBoardType()).isEqualTo(board);
+            assertThat(saved.getDescription()).isEmpty();
+            assertThat(saved.getCanvasLayout()).isNull();
+            assertThatThrownBy(() -> projectService.updateProject(legacy.getId(), "legacy-flow", UpdateProjectRequest.builder().expectedRevision(saved.getDocumentRevision()).name("   ").build())).isInstanceOf(in.voltforge.api.project.dto.ProjectValidationException.class);
+        } finally {
+            projectService.deleteProject(legacy.getId(), "legacy-flow");
+            if (createdId != null) projectService.deleteProject(createdId, "legacy-flow");
+            users.deleteById(owner.getId());
+        }
+    }
+
+    private HttpResponse<String> projectRequest(String method, String path, String token, String body) throws Exception {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/voltForge-app/api/v1/projects" + path))
+                    .header("Content-Type", "application/json").method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
+            if (token != null) request.header("Authorization", "Bearer " + token);
+            return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        }
     }
 
     private HttpResponse<String> get(String path) throws Exception {

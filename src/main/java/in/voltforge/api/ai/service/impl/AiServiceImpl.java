@@ -324,7 +324,7 @@ public class AiServiceImpl implements AiService {
         body.put("projectRevision", request.getProjectRevision());
         body.put("context", request.getContext() != null ? request.getContext() : "");
         body.put("canvasContext", request.getCanvasContext() != null ? request.getCanvasContext() : "");
-        body.put("boardType", defaultString(request.getBoardType(), "ARDUINO_UNO"));
+        body.put("boardType", defaultString(request.getBoardType(), "unspecified"));
         body.put("components", request.getComponents() != null ? request.getComponents() : Collections.emptyList());
         body.put("wires", request.getWires() != null ? request.getWires() : Collections.emptyList());
         body.put("netlist", request.getNetlist() != null ? request.getNetlist() : Collections.emptyMap());

@@ -182,6 +182,7 @@ class AiServiceImplTest {
             assertThat(receivedProject.get()).isEqualTo("project-25");
             assertThat(receivedSession.get()).isEqualTo("session-25");
             assertThat(receivedBody.get()).contains("\"memory\":[]");
+            assertThat(receivedBody.get()).contains("\"boardType\":\"unspecified\"");
             assertThat(receivedBody.get()).contains("\"schemaVersion\":1");
             assertThat(receivedBody.get()).contains("\"contractVersion\":\"1.0.0\"");
             assertThat(receivedBody.get()).doesNotContain("forged client memory");

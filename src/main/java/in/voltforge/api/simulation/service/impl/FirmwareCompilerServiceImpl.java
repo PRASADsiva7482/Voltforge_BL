@@ -185,7 +185,9 @@ public class FirmwareCompilerServiceImpl implements FirmwareCompilerService {
                     .metadata(Map.of("mode", "REMOTE", "remoteBoard", target.remoteBoard()))
                     .build();
         } catch (WebClientResponseException e) {
-            log.warn("Remote compiler returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            // Diagnostics may contain private source excerpts. Return them to
+            // the authorized caller without copying them into application logs.
+            log.warn("Remote compiler returned {}", e.getStatusCode());
             return failed(boardType, target.fqbn(), "REMOTE:" + remoteCompilerUrl, e.getResponseBodyAsString());
         } catch (Exception e) {
             log.warn("Remote firmware compilation failed: {}", e.toString());

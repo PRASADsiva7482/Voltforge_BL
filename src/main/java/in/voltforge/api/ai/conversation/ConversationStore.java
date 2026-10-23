@@ -22,6 +22,8 @@ public class ConversationStore {
     private final ProjectRepository projects;
     private final ProjectService projectService;
     private final AiGatewayPolicy policy;
+    private final in.voltforge.api.ai.memory.UserMemoryService memory;
+    private final in.voltforge.api.ai.document.DocumentService documents;
 
     public record Summary(String id, String projectId, String title, LocalDateTime createdAt, LocalDateTime updatedAt) {
         static Summary of(Conversation c) { return new Summary(c.getId(), c.getProjectId(), c.getTitle(), c.getCreatedAt(), c.getUpdatedAt()); }
@@ -80,6 +82,11 @@ public class ConversationStore {
     }
     @Transactional public Turn begin(String subject,String id,ConversationRequests.Send input) {
         var c=owned(id,subject);
+        in.voltforge.api.ai.gateway.AiResearchPolicy.validate(input.getResearch());
+        var research=input.getResearch();
+        Map<String,Object> researchRecord = research==null||research.mode()==in.voltforge.api.ai.dto.AiResearchRequest.Mode.off
+            ? (research==null||research.documentIds().isEmpty()?Map.of("mode","off"):Map.of("mode","off","documentIds",research.documentIds()))
+            : Map.of("mode","on","publicQuery",research.publicQuery(),"consentToExternalQuery",true,"documentIds",research.documentIds());
         if(input.getMessage()==null||input.getMessage().isBlank()||input.getMessage().length()>6000) throw new BadRequestException("Message must contain 1 to 6000 characters");
         try { UUID.fromString(input.getClientRequestId()); } catch(Exception e) { throw new BadRequestException("A valid request ID is required"); }
         var prior=messages.findByConversationIdAndClientRequestIdAndRole(id,input.getClientRequestId(),"user");
@@ -89,6 +96,8 @@ public class ConversationStore {
             if(!user.getContent().equals(input.getMessage().strip())) throw new ConflictException("CHAT_REQUEST_REUSED","This request ID belongs to another message");
             assistant=messages.findByConversationIdAndClientRequestIdAndRole(id,input.getClientRequestId(),"assistant").orElseThrow();
             if(assistant.getStatus().equals("completed")) return new Turn(Summary.of(c),Message.of(user),Message.of(assistant),null,null,true);
+            if(input.isRetry() && !Objects.equals(user.getMetadata()==null?Map.of("mode","off"):user.getMetadata().getOrDefault("research",Map.of("mode","off")),researchRecord))
+                throw new ConflictException("CHAT_RESEARCH_CHANGED","Review and approve the original public query to retry. Send a new message to change research settings.");
             idle(c);
             if(!input.isRetry()) return new Turn(Summary.of(c),Message.of(user),Message.of(assistant),null,null,true);
             if(assistant.getSequenceNumber()!=c.getNextSequence()) throw new ConflictException("CHAT_RETRY_STALE","Only the latest response can be retried. Send a new message to continue.");
@@ -96,10 +105,14 @@ public class ConversationStore {
             idle(c);
             user=new ConversationMessage(); user.setConversationId(id); user.setClientRequestId(input.getClientRequestId());
             user.setSequenceNumber(c.getNextSequence()+1); user.setRole("user"); user.setStatus("completed"); user.setContent(input.getMessage().strip());
+            user.setMetadata(Map.of("research",researchRecord));
             assistant=new ConversationMessage(); assistant.setConversationId(id); assistant.setClientRequestId(input.getClientRequestId());
             assistant.setSequenceNumber(c.getNextSequence()+2); assistant.setRole("assistant");
             c.setNextSequence(assistant.getSequenceNumber());
-            if(c.getTitle().equals("New conversation")) c.setTitle(user.getContent().replaceAll("\\s+"," ").substring(0,Math.min(80,user.getContent().replaceAll("\\s+"," ").length())));
+            if(c.getTitle().equals("New conversation")) {
+                String title=user.getContent().replaceAll("\\s+"," ");
+                c.setTitle(title.matches("(?i)(test|hi|hello|hey)[!.?]*")?"General engineering chat":title.substring(0,Math.min(80,title.length())));
+            }
         }
         AiChatRequest request=input;
         if(!input.isIncludeProjectContext()) request=new AiChatRequest();
@@ -110,6 +123,7 @@ public class ConversationStore {
             if(input.getProjectRevision()!=null && !input.getProjectRevision().equals(projectService.getProjectRevision(c.getProjectId(),subject)))
                 throw new ConflictException("AI_PROJECT_REVISION_STALE", "The project changed. Reload it before sharing project context.");
         }
+        request.setResearch(input.getResearch());
         request.setMessage(user.getContent()); request.setSessionId(id); request.setAuthenticatedUserId(subject);
         // A project is sent to the provider only after explicit consent, including its bounded memory scope.
         request.setProjectId(input.isIncludeProjectContext()?c.getProjectId():null);
@@ -125,9 +139,15 @@ public class ConversationStore {
         }
         request.setHistory(new ArrayList<>(contextHistory));
         request.setMemory(null); request.setRetrievedEvidence(null); policy.validateChatRequest(request);
+        request.setAuthorizedDocumentEvidence(documents.retrieve(subject,request.getProjectId(),research==null?List.of():research.documentIds(),user.getContent()));
+        // Preference commands and their confirmation commit atomically with the transcript.
+        var memoryReply=memory.command(subject,user.getContent());
+        request.setApprovedUserPreferences(memory.list(subject));
         String attempt=UUID.randomUUID().toString(); assistant.setAttemptId(attempt); assistant.setStatus("pending"); assistant.setContent(""); assistant.setMetadata(null);
+        request.setAttemptId(attempt);
+        memoryReply.ifPresent(reply->{ assistant.setContent(reply); assistant.setStatus("completed"); assistant.setMetadata(Map.of("source","memory-service")); });
         messages.saveAndFlush(user); messages.saveAndFlush(assistant); c.setUpdatedAt(LocalDateTime.now()); conversations.saveAndFlush(c);
-        return new Turn(Summary.of(c),Message.of(user),Message.of(assistant),attempt,request,false);
+        return new Turn(Summary.of(c),Message.of(user),Message.of(assistant),attempt,request,memoryReply.isPresent());
     }
     @Transactional public Message checkpoint(Turn turn,String content,String status,Map<String,Object> metadata) {
         var c=conversations.lockOwned(turn.conversation().id(), owner(turn.request().getAuthenticatedUserId())).orElseThrow();

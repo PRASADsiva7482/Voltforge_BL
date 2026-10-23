@@ -3,6 +3,7 @@ package in.voltforge.api.ai.dto;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,10 +19,20 @@ import java.util.Map;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AiChatRequest {
+    @Valid
+    private AiResearchRequest research;
+
+    /** Server-generated execution attempt; cannot be forged through JSON. */
+    @JsonIgnore
+    private String attemptId;
 
     /** Set only by the authenticated controller; never accepted from JSON. */
     @JsonIgnore
     private String authenticatedUserId;
+
+    /** Server-loaded preferences; cannot be supplied by the browser. */
+    @JsonIgnore
+    private Map<String,String> approvedUserPreferences;
 
     @NotBlank(message = "Message is required")
     @Size(max = 6000, message = "Message must not exceed 6000 characters")
@@ -68,9 +79,14 @@ public class AiChatRequest {
     @Size(max = 50)
     private List<Map<String, Object>> memory;
 
-    /** Reserved for bounded retrieval records; client data remains untrusted. */
+    /** Legacy input ignored on deserialization and never forwarded to the AI service. */
+    @JsonIgnore
     @Size(max = 50)
     private List<Map<String, Object>> retrievedEvidence;
+
+    /** BL-owned, authorized document chunks; never deserialized from browser JSON. */
+    @JsonIgnore
+    private List<Map<String, Object>> authorizedDocumentEvidence;
 
     @Data
     @Builder

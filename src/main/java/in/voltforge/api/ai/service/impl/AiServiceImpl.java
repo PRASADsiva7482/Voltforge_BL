@@ -267,6 +267,25 @@ public class AiServiceImpl implements AiService {
             code = gatewayError.getErrorCode();
             message = gatewayError.getMessage();
             retryable = gatewayError.isRetryable();
+        } else if (error instanceof org.springframework.web.reactive.function.client.WebClientResponseException upstream) {
+            int status = upstream.getStatusCode().value();
+            if (status == 401 || status == 403) {
+                code = "AI_SERVICE_AUTH_FAILED";
+                message = "The backend could not authenticate with the AI service.";
+                retryable = false;
+            } else if (status == 429) {
+                code = "AI_BUSY";
+                message = "The AI service is busy. Retry shortly.";
+            } else if (status == 413 || status == 422) {
+                code = "AI_REQUEST_LIMIT_REACHED";
+                message = "The AI request was rejected. Reduce the question or selected context.";
+            } else if (status == 503) {
+                code = "AI_SERVICE_UNAVAILABLE";
+                message = "The AI service is not ready. Your conversation is preserved.";
+            }
+        } else if (error instanceof org.springframework.web.reactive.function.client.WebClientRequestException) {
+            code = "AI_SERVICE_UNAVAILABLE";
+            message = "The backend could not reach the AI service.";
         }
 
         ObjectNode payload = objectMapper.createObjectNode();
@@ -337,7 +356,11 @@ public class AiServiceImpl implements AiService {
         // Browser/client memory is never trusted. The Python service loads only
         // entries bound to the authenticated identity headers below.
         body.put("memory", Collections.emptyList());
-        body.put("retrievedEvidence", request.getRetrievedEvidence() != null ? request.getRetrievedEvidence() : Collections.emptyList());
+        body.put("approvedUserPreferences", request.getApprovedUserPreferences() != null ? request.getApprovedUserPreferences() : Collections.emptyMap());
+        // Evidence is produced by retrieval, never forwarded from a browser payload.
+        body.put("research", request.getResearch() != null ? request.getResearch() : AiResearchRequest.disabled());
+        body.put("attemptId", request.getAttemptId());
+        body.put("authorizedDocumentEvidence", request.getAuthorizedDocumentEvidence()!=null?request.getAuthorizedDocumentEvidence():Collections.emptyList());
         return body;
     }
 
@@ -501,6 +524,11 @@ public class AiServiceImpl implements AiService {
     public Map<String, Object> getHardwareCoverage() {
         JsonNode data = get("/api/v1/model/hardware-coverage");
         return objectMapper.convertValue(data, MAP_TYPE);
+    }
+
+    @Override
+    public Map<String, Object> getResearchCapabilities() {
+        return objectMapper.convertValue(get("/api/v1/model/research/capabilities"), MAP_TYPE);
     }
 
     @Override
@@ -682,6 +710,9 @@ public class AiServiceImpl implements AiService {
     }
 
     private void ensureChatSession(AiChatRequest request) {
+        if (request.getAttemptId() == null || request.getAttemptId().isBlank()) {
+            request.setAttemptId(UUID.randomUUID().toString());
+        }
         if (request.getSessionId() == null || request.getSessionId().isBlank()) {
             request.setSessionId(UUID.randomUUID().toString());
         }

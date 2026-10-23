@@ -62,17 +62,22 @@ public class AiController {
             @Valid @RequestBody AiChatRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         bindAuthenticatedScope(request, jwt);
+        if(request.getResearch()!=null&&!request.getResearch().documentIds().isEmpty()) throw new AiGatewayException(HttpStatus.BAD_REQUEST,"DOCUMENT_STREAM_REQUIRED","Use a saved conversation to retrieve selected documents",false);
         AiChatResponse response = aiService.chat(request);
         return ResponseEntity.ok(ApiResponse.success("AI response generated", response));
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "Streaming chat with VoltForge AI — SSE token-by-token with thinking")
-    public Flux<ServerSentEvent<String>> chatStream(
+    @Operation(summary = "Streaming chat with VoltForge AI — SSE token-by-token")
+    public ResponseEntity<Flux<ServerSentEvent<String>>> chatStream(
             @Valid @RequestBody AiChatRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         bindAuthenticatedScope(request, jwt);
-        return aiService.chatStream(request);
+        if(request.getResearch()!=null&&!request.getResearch().documentIds().isEmpty()) throw new AiGatewayException(HttpStatus.BAD_REQUEST,"DOCUMENT_STREAM_REQUIRED","Use a saved conversation to retrieve selected documents",false);
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store, no-transform")
+                .header("X-Accel-Buffering", "no")
+                .body(aiService.chatStream(request));
     }
 
     @GetMapping("/hardware-coverage")
@@ -80,6 +85,12 @@ public class AiController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> hardwareCoverage() {
         return ResponseEntity.ok(ApiResponse.success("AI hardware coverage loaded",
                 aiService.getHardwareCoverage()));
+    }
+
+    @GetMapping("/research/capabilities")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> researchCapabilities() {
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(ApiResponse.success("Research capabilities loaded", aiService.getResearchCapabilities()));
     }
 
     @GetMapping("/component-coverage")

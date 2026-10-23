@@ -29,6 +29,11 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDocumentSize(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(ApiResponse.error("File exceeds the upload limit", "UPLOAD_TOO_LARGE"));
+    }
+
     @ExceptionHandler(in.voltforge.api.project.dto.ProjectValidationException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleProjectValidation(in.voltforge.api.project.dto.ProjectValidationException ex) {
         return ResponseEntity.badRequest().body(ApiResponse.<Map<String, String>>builder()

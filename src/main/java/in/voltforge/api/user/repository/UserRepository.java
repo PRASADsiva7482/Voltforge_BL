@@ -14,6 +14,10 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     Optional<User> findByKeycloakId(String keycloakId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.keycloakId = :subject")
+    Optional<User> lockMemoryOwner(String subject);
+
     Optional<User> findByUsername(String username);
 
     Optional<User> findByEmail(String email);

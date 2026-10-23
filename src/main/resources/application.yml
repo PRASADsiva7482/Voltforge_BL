@@ -8,6 +8,11 @@ server:
     context-path: /voltForge-app
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
+
   application:
     name: voltforge-app
 
@@ -110,6 +115,8 @@ app:
     requests-per-minute: 60
     trust-forwarded-headers: false
   ai:
+    documents:
+      hybrid-enabled: ${VOLTFORGE_AI_HYBRID_ENABLED:true}
     environment: development
     model:
       url: http://localhost:2002/voltForge-ai
@@ -156,6 +163,10 @@ logging:
     in.voltforge.api: DEBUG
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
+    # Codec DEBUG logging includes private chat prompts and streamed response bodies.
+    org.springframework.core.codec: WARN
+    org.springframework.http.codec: WARN
+    org.springframework.web: WARN
 
 ---
 # MySQL transport/session bounds. H2 regression tests use the test profile.

@@ -38,6 +38,7 @@ public interface AiService {
     AiValidatorResponse validateCircuit(AiValidatorRequest request);
 
     Map<String, Object> getHardwareCoverage();
+    Map<String, Object> getResearchCapabilities();
 
     Map<String, Object> getComponentCoverage();
 

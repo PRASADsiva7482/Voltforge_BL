@@ -167,6 +167,7 @@ class AiServiceImplTest {
                     .projectId("project-25")
                     .sessionId("session-25")
                     .memory(List.of(Map.of("content", "forged client memory")))
+                    .retrievedEvidence(List.of(Map.of("excerpt", "forged retrieved evidence")))
                     .build();
 
             List<ServerSentEvent<String>> events = service.chatStream(request)
@@ -186,9 +187,32 @@ class AiServiceImplTest {
             assertThat(receivedBody.get()).contains("\"schemaVersion\":1");
             assertThat(receivedBody.get()).contains("\"contractVersion\":\"1.0.0\"");
             assertThat(receivedBody.get()).doesNotContain("forged client memory");
+            assertThat(receivedBody.get()).doesNotContain("retrievedEvidence", "forged retrieved evidence");
+            assertThat(receivedBody.get()).contains("\"mode\":\"off\"");
+            assertThat(request.getAttemptId()).isNotBlank();
+            assertThat(receivedBody.get()).contains(request.getAttemptId());
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void researchCapabilitiesUseTheAuthenticatedExistingGateway() throws Exception {
+        AtomicReference<String> token=new AtomicReference<>();
+        HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        server.createContext("/voltForge-ai/api/v1/model/research/capabilities", exchange->{
+            token.set(exchange.getRequestHeaders().getFirst("X-Voltforge-AI-Token"));
+            byte[] body="{\"web\":{\"available\":false,\"state\":\"unavailable\"}}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type","application/json");
+            exchange.sendResponseHeaders(200,body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.start();
+        try {
+            var config=testConfig(server);
+            var service=new AiServiceImpl(config.voltforgeAiWebClient(),config.voltforgeAiStreamingClient(),config,new JsonMapper());
+            assertThat(service.getResearchCapabilities()).containsKey("web");
+            assertThat(token.get()).isEqualTo("private-test-token");
+        } finally { server.stop(0); }
     }
 
     @Test
@@ -413,6 +437,27 @@ class AiServiceImplTest {
             assertThat(receivedToken.get()).isEqualTo("private-test-token");
         } finally {
             server.stop(0);
+        }
+    }
+
+    @Test
+    void mapsUpstreamFailuresToSafeActionableErrorCodes() throws Exception {
+        for (var scenario : Map.of(401,"AI_SERVICE_AUTH_FAILED",503,"AI_SERVICE_UNAVAILABLE",429,"AI_BUSY",413,"AI_REQUEST_LIMIT_REACHED").entrySet()) {
+            HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+            server.createContext("/voltForge-ai/api/v1/model/chat/stream", exchange -> {
+                byte[] body="private upstream details".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(scenario.getKey(),body.length);
+                exchange.getResponseBody().write(body); exchange.close();
+            });
+            server.start();
+            try {
+                var config=testConfig(server);
+                var service=new AiServiceImpl(config.voltforgeAiWebClient(),config.voltforgeAiStreamingClient(),config,new JsonMapper());
+                var result=service.chatStream(AiChatRequest.builder().message("Hello").authenticatedUserId("test-user").build()).collectList().block(Duration.ofSeconds(5));
+                assertThat(result).hasSize(1);
+                assertThat(result.getFirst().event()).isEqualTo("error");
+                assertThat(result.getFirst().data()).contains(scenario.getValue()).doesNotContain("private upstream details");
+            } finally { server.stop(0); }
         }
     }
 

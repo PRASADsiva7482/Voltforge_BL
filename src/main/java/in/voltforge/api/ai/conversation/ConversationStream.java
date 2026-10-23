@@ -38,6 +38,11 @@ public class ConversationStream {
         var json=mapper.readTree(event.data());
         var payload=json.has("payload")?json.get("payload"):json;
         String type=json.path("type").asString(event.event()==null?"":event.event());
+        if(type.equals("sources")) {
+            if(!turn.attemptId().equals(payload.path("attemptId").asString(""))) return event("status",Map.of("stage","ignored-stale-sources"));
+            if(payload.path("citations").isArray() && payload.path("citations").size()<=5)
+                state.metadata.put("citations",mapper.convertValue(payload.get("citations"),Object.class));
+        }
         if(type.equals("token")||type.equals("delta")) state.content.append(payload.path("delta").asString(payload.path("content").asString("")));
         if(type.equals("complete")||type.equals("done")) {
             String reply=payload.path("reply").asString(payload.path("content").asString(""));
@@ -61,6 +66,8 @@ public class ConversationStream {
         return event;
     }
     private ServerSentEvent<String> finish(ConversationStore.Turn turn,State state,String status) {
+        if("failed".equals(status)) state.metadata.putIfAbsent("errorCode","AI_STREAM_FAILED");
+        if("interrupted".equals(status)) state.metadata.putIfAbsent("errorCode","AI_STREAM_INTERRUPTED");
         var saved=store.checkpoint(turn,state.content.toString(),status,state.metadata); state.finished=true; return event("saved",saved);
     }
     private static class State { final StringBuilder content=new StringBuilder(); final Map<String,Object> metadata=new HashMap<>(); long lastCheckpoint=System.nanoTime(); volatile boolean finished; ServerSentEvent<String> terminal; }

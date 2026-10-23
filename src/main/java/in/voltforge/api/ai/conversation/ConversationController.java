@@ -32,7 +32,10 @@ public class ConversationController {
     @DeleteMapping("/{id}") public ApiResponse<Void> delete(@AuthenticationPrincipal Jwt jwt,@PathVariable String id) { store.delete(jwt.getSubject(),id); return ApiResponse.success("Conversation deleted",null); }
     @PostMapping("/{id}/stop") public ApiResponse<Void> stop(@AuthenticationPrincipal Jwt jwt,@PathVariable String id) { store.stop(jwt.getSubject(),id); return ApiResponse.success("Generation stopped",null); }
     @PostMapping(value="/{id}/messages/stream",produces=MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> send(@AuthenticationPrincipal Jwt jwt,@PathVariable String id,@Valid @RequestBody ConversationRequests.Send request) {
-        return streaming.stream(store.begin(jwt.getSubject(),id,request));
+    public ResponseEntity<Flux<ServerSentEvent<String>>> send(@AuthenticationPrincipal Jwt jwt,@PathVariable String id,@Valid @RequestBody ConversationRequests.Send request) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CACHE_CONTROL,"no-store, no-transform")
+            .header("X-Accel-Buffering","no")
+            .body(streaming.stream(store.begin(jwt.getSubject(),id,request)));
     }
 }

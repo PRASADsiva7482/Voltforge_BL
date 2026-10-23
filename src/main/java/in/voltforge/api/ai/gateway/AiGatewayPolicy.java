@@ -72,7 +72,7 @@ public class AiGatewayPolicy {
         inspectStructuredContext(request.getSimulationState(), "simulationState", projectId, projectRevision);
         inspectStructuredContext(request.getFiles(), "files", projectId, projectRevision);
         inspectStructuredContext(request.getDiagnostics(), "diagnostics", projectId, projectRevision);
-        inspectStructuredContext(request.getRetrievedEvidence(), "retrievedEvidence", projectId, projectRevision);
+        AiResearchPolicy.validate(request.getResearch());
         inspectJsonContext(request.getContext(), "context", projectId, projectRevision);
         inspectJsonContext(request.getCanvasContext(), "canvasContext", projectId, projectRevision);
     }

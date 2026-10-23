@@ -268,6 +268,25 @@ class ConversationIntegrationTest {
         assertThat(restored.getFirst().status()).isEqualTo("completed");
         assertThat(restored.getFirst().metadata()).doesNotContainKey("errorCode");
     }
+    @Test void outputLimitPreservesPartialAnswerAndReasonAfterReopen() {
+        when(ai.chatStream(any())).thenReturn(Flux.just(
+            event("{\"type\":\"token\",\"delta\":\"Partial calculation\"}"),
+            event("{\"type\":\"error\",\"code\":\"AI_RESPONSE_LIMIT\"}")));
+        var conversation=store.create(alice,null);
+        var request=input("Explain the calculation");
+        var turn=store.begin(alice,conversation.id(),request);
+        stream.stream(turn).blockLast();
+        var saved=store.history(alice,conversation.id(),0,50).getContent().getFirst();
+        assertThat(saved.status()).isEqualTo("failed");
+        assertThat(saved.content()).isEqualTo("Partial calculation");
+        assertThat(saved.metadata()).containsEntry("errorCode","AI_RESPONSE_LIMIT");
+        request.setRetry(true); providerSuccess();
+        stream.stream(store.begin(alice,conversation.id(),request)).blockLast();
+        var reopened=store.history(alice,conversation.id(),0,50);
+        assertThat(reopened.getTotalElements()).isEqualTo(2);
+        assertThat(reopened.getContent().getFirst().status()).isEqualTo("completed");
+        assertThat(reopened.getContent().getFirst().metadata()).doesNotContainKey("errorCode");
+    }
     @Test void stopAndAttemptLeaseProtectAgainstLateWrites() {
         var c=store.create(alice,null); var request=input("Stop"); var turn=store.begin(alice,c.id(),request);
         store.checkpoint(turn,"partial","pending",Map.of()); store.stop(alice,c.id());

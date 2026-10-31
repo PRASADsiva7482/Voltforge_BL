@@ -202,8 +202,8 @@ public class AiServiceImpl implements AiService {
             AiRequestAdmission.Lease lease = null;
             try {
                 gatewayPolicy.validateChatRequest(request);
-                AiRequestAdmission.Lease acquiredLease = requestAdmission.acquireStreaming(
-                        request.getAuthenticatedUserId(), request.getProjectId());
+                AiRequestAdmission.Lease acquiredLease = telemetry.measure(AiTelemetry.Stage.ADMISSION,
+                        () -> requestAdmission.acquireStreaming(request.getAuthenticatedUserId(), request.getProjectId()));
                 lease = acquiredLease;
                 Map<String, Object> requestBody = buildChatBody(request);
                 WebClient.RequestBodySpec requestSpec = voltforgeAiStreamingClient.post()
@@ -219,10 +219,7 @@ public class AiServiceImpl implements AiService {
                         // bodyToFlux is deliberately returned directly. Reactor
                         // cancellation closes the upstream HTTP response.
                         .bodyToFlux(SSE_STRING_TYPE)
-                        .doOnNext(event -> telemetry.observeStreamEvent(
-                                observation,
-                                event.event(),
-                                event.data() == null ? 0 : event.data().getBytes(StandardCharsets.UTF_8).length))
+                        .doOnNext(event -> observeGatewayEvent(observation, event))
                         .doOnCancel(() -> {
                             telemetry.finish(observation, "cancelled");
                             log.debug("AI stream cancelled by gateway client (requestId={})", requestId);
@@ -259,6 +256,25 @@ public class AiServiceImpl implements AiService {
         return "success";
     }
 
+    private void observeGatewayEvent(AiTelemetry.Observation observation, ServerSentEvent<String> event) {
+        String type = event.event();
+        int bytes = event.data() == null ? 0 : event.data().getBytes(StandardCharsets.UTF_8).length;
+        try {
+            var root = objectMapper.readTree(event.data());
+            var payload = root.has("payload") ? root.get("payload") : root;
+            if (type == null || type.isBlank()) type = root.path("type").asString("");
+            if ("token".equals(type) || "delta".equals(type)) {
+                String text = payload.path("delta").asString(payload.path("token").asString(payload.path("content").asString("")));
+                bytes = text.getBytes(StandardCharsets.UTF_8).length;
+            }
+            if ("error".equals(type)) telemetry.recordFaultCode(payload.path("code").asString(""));
+        } catch (RuntimeException ignored) {
+            // Diagnostics must not change transport behavior or count malformed data as a token.
+            if ("token".equals(type) || "delta".equals(type)) bytes = 0;
+        }
+        telemetry.observeStreamEvent(observation, type, bytes);
+    }
+
     private ServerSentEvent<String> gatewayErrorEvent(AiChatRequest request, String requestId, Throwable error) {
         String code = "AI_GATEWAY_STREAM_FAILED";
         String message = "The VoltForge AI response could not continue.";
@@ -288,6 +304,7 @@ public class AiServiceImpl implements AiService {
             message = "The backend could not reach the AI service.";
         }
 
+        telemetry.recordFaultCode(code);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("schemaVersion", 1);
         payload.put("contractVersion", "1.0.0");

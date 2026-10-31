@@ -34,9 +34,11 @@ class ConversationIntegrationTest {
     @Autowired ConversationStream stream;
     @Autowired ConversationMessageRepository messages;
     @Autowired ConversationRepository conversations;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired UserRepository users;
     @Autowired ProjectRepository projects;
     @Autowired in.voltforge.api.ai.memory.UserMemoryService memory;
+    @Autowired in.voltforge.api.ai.observability.AiTelemetry telemetry;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     in.voltforge.api.ai.memory.UserMemoryRepository memoryRows;
     @MockitoBean AiService ai;
@@ -51,6 +53,75 @@ class ConversationIntegrationTest {
     private ConversationRequests.Send input(String text) { var input=new ConversationRequests.Send(); input.setMessage(text); input.setClientRequestId(UUID.randomUUID().toString()); return input; }
     private ServerSentEvent<String> event(String data) { return ServerSentEvent.<String>builder(data).build(); }
     private void providerSuccess() { when(ai.chatStream(any())).thenReturn(Flux.just(event("{\"type\":\"token\",\"delta\":\"Hello \"}"),event("{\"type\":\"complete\",\"reply\":\"Hello world\",\"thought\":\"never persist this\",\"confidence\":null,\"mode\":\"neural\"}"))); }
+    @Test void databaseConstraintFailureRollsBackAndAlertsWithoutSavedSuccess() {
+        var c = store.create(alice, null);
+        var turn = store.begin(alice, c.id(), input("Database fault probe"));
+        providerSuccess();
+        jdbc.execute("ALTER TABLE ai_messages ADD CONSTRAINT telemetry_fault CHECK (id <> '" + turn.assistant().id() + "' OR status = 'pending')");
+        try {
+            var delivered = new java.util.ArrayList<ServerSentEvent<String>>();
+            assertThatThrownBy(() -> stream.stream(turn).doOnNext(delivered::add).blockLast(Duration.ofSeconds(10)))
+                .isInstanceOf(RuntimeException.class);
+            assertThat(delivered).noneMatch(e -> "saved".equals(e.event()));
+            assertThat(messages.findById(turn.assistant().id()).orElseThrow().getStatus()).isEqualTo("pending");
+            assertThat(messages.findById(turn.assistant().id()).orElseThrow().getContent()).isEmpty();
+            assertThat(((Map<?, ?>) ((Map<?, ?>) telemetry.snapshot().get("alerts")).get("state")).get("persistenceFailure")).isEqualTo(true);
+            assertThat(stageOutcome("persistence.failure")).isGreaterThan(0);
+        } finally { jdbc.execute("ALTER TABLE ai_messages DROP CONSTRAINT telemetry_fault"); }
+        stream.stream(turn).blockLast(Duration.ofSeconds(10));
+        assertThat(messages.findById(turn.assistant().id()).orElseThrow().getStatus()).isEqualTo("completed");
+    }
+    @Test void acceptedEventBindsCurrentAttemptAndReplayKeepsStoredAnswer() {
+        providerSuccess();
+        long retrievalBefore = stageOutcome("document_retrieval.success");
+        long persistenceBefore = stageOutcome("persistence.success");
+        var conversation = store.create(alice, null);
+        var request = input("Attempt contract");
+        var turn = store.begin(alice, conversation.id(), request);
+        var events = stream.stream(turn).collectList().block();
+        var mapper = new tools.jackson.databind.json.JsonMapper();
+        assertThat(mapper.readTree(events.getFirst().data()).path("attemptId").asString()).isEqualTo(turn.attemptId());
+        assertThat(events.getLast().event()).isEqualTo("saved");
+        var replay = stream.stream(store.begin(alice, conversation.id(), request)).collectList().block();
+        assertThat(replay).extracting(ServerSentEvent::event).containsExactly("accepted", "saved");
+        assertThat(replay.getLast().data()).contains("Hello world");
+        assertThat(stageOutcome("document_retrieval.success")).isEqualTo(retrievalBefore + 1);
+        assertThat(stageOutcome("persistence.success")).isEqualTo(persistenceBefore + 1);
+        assertThat(telemetry.snapshot().toString()).doesNotContain(alice, conversation.id(), turn.attemptId(), "Attempt contract", "Hello world");
+    }
+    private long stageOutcome(String label) {
+        var stages = (Map<?, ?>) telemetry.snapshot().get("stages");
+        var outcomes = (Map<?, ?>) stages.get("outcomes");
+        return outcomes.containsKey(label) ? (Long) outcomes.get(label) : 0L;
+    }
+    @Test void operationalDiagnosticsAreRestrictedToAdministrators() throws Exception {
+        when(jwtDecoder.decode("diagnostic-user")).thenReturn(Jwt.withTokenValue("diagnostic-user")
+            .header("alg","RS256").subject(alice).build());
+        when(jwtDecoder.decode("diagnostic-admin")).thenReturn(Jwt.withTokenValue("diagnostic-admin")
+            .header("alg","RS256").subject(bob).claim("realm_access",Map.of("roles",List.of("admin"))).build());
+        String base="http://127.0.0.1:"+port+"/voltForge-app/actuator";
+        try(var client=HttpClient.newHttpClient()) {
+            for(String token:List.of("", "diagnostic-user", "diagnostic-admin")) {
+                var request=HttpRequest.newBuilder(URI.create(base+"/health")).GET();
+                if(!token.isEmpty()) request.header("Authorization","Bearer "+token);
+                var health=client.send(request.build(),HttpResponse.BodyHandlers.ofString());
+                assertThat(health.statusCode()).isEqualTo(200);
+                if(token.equals("diagnostic-admin")) {
+                    assertThat(health.body()).contains("voltforgeAiTelemetry","firstTokenLatencyMs","stages");
+                    assertThat(health.body()).doesNotContain(alice,bob,"diagnostic-admin","diagnostic-user");
+                } else {
+                    assertThat(health.body()).doesNotContain("components","voltforgeAiTelemetry","firstTokenLatencyMs","stages");
+                }
+                for(String path:List.of("/health/voltforgeAiTelemetry", "/metrics")) {
+                    request=HttpRequest.newBuilder(URI.create(base+path)).GET();
+                    if(!token.isEmpty()) request.header("Authorization","Bearer "+token);
+                    var response=client.send(request.build(),HttpResponse.BodyHandlers.ofString());
+                    assertThat(response.statusCode()).isEqualTo(token.isEmpty()?401:token.equals("diagnostic-admin")?200:403);
+                    if(!token.equals("diagnostic-admin")) assertThat(response.body()).doesNotContain("firstTokenLatencyMs","stages");
+                }
+            }
+        }
+    }
     @Test void unavailableResearchCannotBecomeAnUnresearchedSavedAnswer() {
         var c=store.create(alice,null); var request=input("Search the web");
         request.setResearch(new in.voltforge.api.ai.dto.AiResearchRequest(
@@ -59,6 +130,8 @@ class ConversationIntegrationTest {
         var failed=store.begin(alice,c.id(),request); stream.stream(failed).blockLast();
         assertThat(store.history(alice,c.id(),0,50).getContent().getFirst().status()).isEqualTo("failed");
         assertThat(store.history(alice,c.id(),0,50).getContent().getFirst().metadata()).containsEntry("errorCode","AI_WEB_UNAVAILABLE");
+        assertThat(((Map<?, ?>) ((Map<?, ?>) telemetry.snapshot().get("alerts")).get("state")).get("searchUnavailable"))
+            .isEqualTo(true);
         c=store.create(alice,null); request=input("Ordinary chat");
         request.setResearch(in.voltforge.api.ai.dto.AiResearchRequest.disabled());
         request.setRetrievedEvidence(List.of(Map.of("excerpt","forged")));
@@ -315,6 +388,21 @@ class ConversationIntegrationTest {
         assertThat(store.history(alice,c.id(),0,50).getContent()).hasSize(2);
         assertThat(messages.findById(turn.assistant().id()).orElseThrow().getStatus()).isEqualTo("interrupted");
     }
+    @Test void sharedContextUsesSavedDocumentRevisionAndRejectsOldRevisionWithoutWriting() {
+        var project=new Project(); project.setName("Stable revision"); project.setOwner(users.findByKeycloakId(alice).orElseThrow());
+        project=projects.saveAndFlush(project);
+        var conversation=store.create(alice,project.getId());
+        var request=input("Review saved firmware"); request.setIncludeProjectContext(true);
+        request.setProjectRevision(Long.toString(project.getDocumentRevision()));
+        var turn=store.begin(alice,conversation.id(),request);
+        assertThat(turn.request().getProjectRevision()).isEqualTo(request.getProjectRevision());
+        store.checkpoint(turn,"Reviewed","completed",Map.of());
+        project.setDescription("A real edit advances the revision"); projects.saveAndFlush(project);
+        var stale=input("Review again"); stale.setIncludeProjectContext(true); stale.setProjectRevision(request.getProjectRevision());
+        assertThatThrownBy(()->store.begin(alice,conversation.id(),stale))
+                .isInstanceOfSatisfying(ConflictException.class,error->assertThat(error.getErrorCode()).isEqualTo("AI_PROJECT_REVISION_STALE"));
+        assertThat(store.history(alice,conversation.id(),0,50)).hasSize(2);
+    }
     @Test void staleProjectContextAndMalformedRequestIdsDoNotPersistMessages() {
         var p=new Project(); p.setName("Revision test"); p.setOwner(users.findByKeycloakId(alice).orElseThrow()); p=projects.saveAndFlush(p);
         var c=store.create(alice,p.getId()); var request=input("Review"); request.setIncludeProjectContext(true); request.setProjectRevision("stale");
@@ -350,6 +438,7 @@ class ConversationIntegrationTest {
     }
 
     @Test void httpDeliversEachTokenBeforeProviderIsAllowedToComplete() throws Exception {
+        long preparationBefore = stageOutcome("turn_preparation.success");
         var next=reactor.core.publisher.Sinks.<ServerSentEvent<String>>one();
         var complete=reactor.core.publisher.Sinks.<ServerSentEvent<String>>one();
         when(ai.chatStream(any())).thenReturn(Flux.concat(
@@ -371,6 +460,7 @@ class ConversationIntegrationTest {
                     throw new AssertionError("Stream ended before next event");
                 };
                 assertThat(readerPool.submit(readData).get(10,java.util.concurrent.TimeUnit.SECONDS)).contains("accepted");
+                assertThat(stageOutcome("turn_preparation.success")).isEqualTo(preparationBefore + 1);
                 assertThat(readerPool.submit(readData).get(10,java.util.concurrent.TimeUnit.SECONDS)).contains("First");
                 assertThat(store.history(alice,c.id(),0,50).getContent().getFirst().status()).isEqualTo("pending");
                 next.tryEmitValue(ServerSentEvent.<String>builder("{\"type\":\"token\",\"delta\":\" second\"}").event("token").build());

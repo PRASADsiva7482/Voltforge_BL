@@ -15,6 +15,7 @@ import reactor.core.publisher.Flux;
 public class ConversationController {
     private final ConversationStore store;
     private final ConversationStream streaming;
+    private final in.voltforge.api.ai.observability.AiTelemetry telemetry;
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ConversationStore.Summary> create(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody ConversationRequests.Create request) {
         return ApiResponse.success("Conversation created",store.create(jwt.getSubject(),request.projectId()));
@@ -36,6 +37,8 @@ public class ConversationController {
         return ResponseEntity.ok()
             .header(HttpHeaders.CACHE_CONTROL,"no-store, no-transform")
             .header("X-Accel-Buffering","no")
-            .body(streaming.stream(store.begin(jwt.getSubject(),id,request)));
+            .body(streaming.stream(telemetry.measure(
+                in.voltforge.api.ai.observability.AiTelemetry.Stage.TURN_PREPARATION,
+                () -> store.begin(jwt.getSubject(),id,request))));
     }
 }

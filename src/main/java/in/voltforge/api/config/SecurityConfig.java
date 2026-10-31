@@ -52,6 +52,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         // ProjectService still checks is_public before returning
                         // the project, so anonymous GET access cannot expose a
                         // private project. Only the read endpoint is public.

@@ -21,6 +21,61 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AiServiceImplTest {
+    @Test
+    void telemetryRecognizesLegacyEventsAndCountsActualTextWithoutFalseSuccess() {
+        var config = new VoltforgeAiConfig();
+        var service = new AiServiceImpl(config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(), config, new JsonMapper());
+        var telemetry = (in.voltforge.api.ai.observability.AiTelemetry) ReflectionTestUtils.getField(service, "telemetry");
+        var observation = telemetry.start("chat.stream");
+        for (String data : List.of("{\"type\":\"status\",\"content\":\"private\"}", "{\"type\":\"token\",\"delta\":\"\"}",
+            "{\"type\":\"token\",\"delta\":\"private response\"}",
+            "{\"type\":\"error\",\"payload\":{\"code\":\"AI_MODEL_UNAVAILABLE\"}}")) {
+            ReflectionTestUtils.invokeMethod(service, "observeGatewayEvent", observation,
+                ServerSentEvent.<String>builder(data).build());
+        }
+        telemetry.finish(observation, "success");
+        var snapshot = telemetry.snapshot();
+        assertThat(((Map<?, ?>) ((Map<?, ?>) snapshot.get("requests")).get("completedByOutcome")).get("failure")).isEqualTo(1L);
+        assertThat(((Map<?, ?>) ((Map<?, ?>) snapshot.get("streams")).get("firstTokenLatencyMs")).get("count")).isEqualTo(1);
+        assertThat(((Map<?, ?>) ((Map<?, ?>) snapshot.get("alerts")).get("state")).get("modelUnavailable")).isEqualTo(true);
+        assertThat(snapshot.toString()).doesNotContain("private");
+    }
+    @Test
+    void relaysSharedMultilineAndUnicodeContractAcrossByteBoundaries() throws Exception {
+        var mapper = new JsonMapper();
+        var fixture = mapper.readTree(java.nio.file.Files.readString(
+                java.nio.file.Path.of("../Voltforge_AI/docs/contracts/chat-stream-v1.json")));
+        AtomicReference<String> wire = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/voltForge-ai/api/v1/model/chat/stream", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0);
+            for (byte value : wire.get().getBytes(StandardCharsets.UTF_8)) {
+                exchange.getResponseBody().write(value); exchange.getResponseBody().flush();
+            }
+            exchange.close();
+        });
+        server.start();
+        try {
+            var config = testConfig(server);
+            var service = new AiServiceImpl(config.voltforgeAiWebClient(), config.voltforgeAiStreamingClient(), config, mapper);
+            var request = AiChatRequest.builder().message("Contract").authenticatedUserId("contract-user").sessionId("contract-session").build();
+            for (var sample : fixture.path("framingCases")) {
+                wire.set(sample.path("wire").asString());
+                var events = service.chatStream(request).collectList().block(Duration.ofSeconds(10));
+                assertThat(events).hasSize(1);
+                if (sample.path("gatewayExpected").asString("").equals("reject")) {
+                    // Current Spring relay accepts LF/CRLF, not bare CR. Actual
+                    // AI producers emit LF; keep this limitation explicit.
+                    assertThat(events.getFirst().event()).isEqualTo("error");
+                    assertThat(events.getFirst().data()).contains("AI_GATEWAY_STREAM_FAILED");
+                } else {
+                    assertThat(mapper.readTree(events.getFirst().data()).path("delta").asString()).isEqualTo(fixture.path("answer").asString());
+                }
+            }
+        } finally { server.stop(0); }
+    }
 
     @Test
     void preservesTypedRelayOrderingCitationsProposalsCompletionAndErrors() throws Exception {

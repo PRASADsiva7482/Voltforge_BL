@@ -13,6 +13,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
@@ -31,29 +32,29 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleDocumentSize(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(ApiResponse.error("File exceeds the upload limit", "UPLOAD_TOO_LARGE"));
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error("File exceeds the upload limit", "UPLOAD_TOO_LARGE"));
     }
 
     @ExceptionHandler(in.voltforge.api.project.dto.ProjectValidationException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleProjectValidation(in.voltforge.api.project.dto.ProjectValidationException ex) {
-        return ResponseEntity.badRequest().body(ApiResponse.<Map<String, String>>builder()
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(ApiResponse.<Map<String, String>>builder()
                 .success(false).message("Validation failed").errorCode("VALIDATION_ERROR").data(ex.getFields()).build());
     }
 
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(org.springframework.http.converter.HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest().body(ApiResponse.error("Invalid request: check boardType and field values", "INVALID_REQUEST"));
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error("Invalid request: check boardType and field values", "INVALID_REQUEST"));
     }
 
     @ExceptionHandler(PayloadTooLargeException.class)
     public ResponseEntity<ApiResponse<Void>> handleProjectSize(PayloadTooLargeException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(ApiResponse.error(ex.getMessage(), "PROJECT_PAYLOAD_TOO_LARGE"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), "PROJECT_PAYLOAD_TOO_LARGE"));
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Void>> handleConcurrentSave(OptimisticLockingFailureException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(
+        return ResponseEntity.status(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(
                 "The project changed since this editor state was loaded. Reload it before saving.", "PROJECT_REVISION_STALE"));
     }
 
@@ -61,7 +62,7 @@ public class GlobalExceptionHandler {
             DataAccessResourceFailureException.class, TransactionTimedOutException.class, TransactionSystemException.class})
     public ResponseEntity<ApiResponse<Void>> handleDatabaseUnavailable(Exception ex) {
         log.warn("Database operation unavailable: {}", ex.getClass().getSimpleName());
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ApiResponse.error(
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(
                 "The database operation could not be confirmed. Retry shortly.", "DATABASE_UNAVAILABLE"));
     }
 
@@ -69,49 +70,49 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleAiGateway(AiGatewayException ex) {
         log.warn("AI gateway request rejected: {} ({})", ex.getMessage(), ex.getErrorCode());
         return ResponseEntity.status(ex.getStatus())
-                .body(ApiResponse.error(ex.getMessage(), ex.getErrorCode()));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), ex.getErrorCode()));
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleResourceNotFound(ResourceNotFoundException ex) {
         log.warn("Resource not found: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ApiResponse.error(ex.getMessage(), "RESOURCE_NOT_FOUND"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), "RESOURCE_NOT_FOUND"));
     }
 
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadRequest(BadRequestException ex) {
         log.warn("Bad request: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.error(ex.getMessage(), "BAD_REQUEST"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), "BAD_REQUEST"));
     }
 
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException ex) {
         log.warn("Forbidden access: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.error(ex.getMessage(), "FORBIDDEN"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), "FORBIDDEN"));
     }
 
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ApiResponse<Void>> handleDuplicateResource(DuplicateResourceException ex) {
         log.warn("Duplicate resource: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponse.error(ex.getMessage(), "DUPLICATE_RESOURCE"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), "DUPLICATE_RESOURCE"));
     }
 
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ApiResponse<Void>> handleConflict(ConflictException ex) {
         log.warn("Conflict: {} ({})", ex.getMessage(), ex.getErrorCode());
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponse.error(ex.getMessage(), ex.getErrorCode()));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error(ex.getMessage(), ex.getErrorCode()));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(ApiResponse.error("Access denied", "ACCESS_DENIED"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error("Access denied", "ACCESS_DENIED"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -129,7 +130,7 @@ public class GlobalExceptionHandler {
                 .data(errors)
                 .errorCode("VALIDATION_ERROR")
                 .build();
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).body(response);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -147,13 +148,13 @@ public class GlobalExceptionHandler {
                 .data(errors)
                 .errorCode("CONSTRAINT_VIOLATION")
                 .build();
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).body(response);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex, WebRequest request) {
         log.error("Unhandled exception at {}: {}", request.getDescription(false), ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("An unexpected error occurred", "INTERNAL_ERROR"));
+                .contentType(MediaType.APPLICATION_JSON).body(ApiResponse.error("An unexpected error occurred", "INTERNAL_ERROR"));
     }
 }

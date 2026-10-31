@@ -85,6 +85,8 @@ class ProjectServiceRevisionTest {
 
         verify(projectRepository).saveAndFlush(project);
         assertThat(response.getDocumentRevision()).isEqualTo("8");
+        assertThat(service.getProjectRevision("project-029", "user-029"))
+                .isEqualTo(response.getDocumentRevision());
     }
 
     @Test
@@ -111,6 +113,8 @@ class ProjectServiceRevisionTest {
         var response = service.updateProject("project-029", "user-029", request);
         assertThat(response.getDocumentRevision()).isEqualTo("8");
         assertThat(response.getCodeFiles()).hasSize(1);
+        assertThat(service.getProjectRevision("project-029", "user-029"))
+                .isEqualTo("8");
         assertThatThrownBy(() -> service.updateProject("project-029", "user-029", request))
                 .isInstanceOf(in.voltforge.api.common.exception.ConflictException.class);
     }

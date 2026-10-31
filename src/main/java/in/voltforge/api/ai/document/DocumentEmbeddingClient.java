@@ -10,6 +10,7 @@ import java.util.*;
 
 @Component
 public class DocumentEmbeddingClient {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(DocumentEmbeddingClient.class);
     private final WebClient client;
     public record Model(String modelId,int dimensions,boolean available) {}
     public record Encoded(String modelId,int dimensions,List<List<Double>> vectors) {}
@@ -19,7 +20,7 @@ public class DocumentEmbeddingClient {
             var model=client.get().uri("/api/v1/model/embeddings").retrieve().bodyToMono(Model.class).block(Duration.ofSeconds(5));
             if(model==null||!model.available()||model.dimensions()!=384||model.modelId()==null||!model.modelId().matches("[a-f0-9]{64}")) throw new IllegalStateException();
             return model;
-        } catch(Exception e) { throw unavailable(); }
+        } catch(Exception e) { throw unavailable("metadata",e); }
     }
     public List<List<Double>> encode(Model model,List<String> texts) {
         try {
@@ -28,7 +29,14 @@ public class DocumentEmbeddingClient {
             if(response==null||!model.modelId().equals(response.modelId())||response.dimensions()!=384||response.vectors()==null||response.vectors().size()!=texts.size()) throw new IllegalStateException();
             response.vectors().forEach(DocumentHybridSearch::validateVector);
             return response.vectors();
-        } catch(Exception e) { throw unavailable(); }
+        } catch(Exception e) { throw unavailable("encoding",e); }
+    }
+    private static AiGatewayException unavailable(String stage,Exception error) {
+        // Do not log upstream bodies, URLs, credentials, document text or raw exception messages.
+        String reason=error instanceof org.springframework.web.reactive.function.client.WebClientResponseException response
+            ? "HTTP_"+response.getStatusCode().value() : error.getClass().getSimpleName();
+        log.warn("Reference encoder {} failed ({})",stage,reason);
+        return unavailable();
     }
     static AiGatewayException unavailable() { return new AiGatewayException(HttpStatus.SERVICE_UNAVAILABLE,"AI_EMBEDDING_UNAVAILABLE","Reference indexing is unavailable or busy. Retry shortly; your documents are preserved.",true); }
 }

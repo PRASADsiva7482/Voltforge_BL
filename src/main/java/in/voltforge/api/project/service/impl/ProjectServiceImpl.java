@@ -195,7 +195,9 @@ public class ProjectServiceImpl implements ProjectService {
         if (!canAccessProject(project, keycloakId)) {
             throw new ForbiddenException("Access denied to project");
         }
-        return project.getUpdatedAt() != null ? project.getUpdatedAt().toString() : null;
+        // Use the same opaque revision returned by the project API and used by
+        // editor saves. Timestamp formatting/precision is not a revision token.
+        return Long.toString(project.getDocumentRevision());
     }
 
     @Override

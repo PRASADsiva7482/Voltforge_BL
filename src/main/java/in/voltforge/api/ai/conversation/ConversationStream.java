@@ -15,13 +15,20 @@ public class ConversationStream {
     private final ConversationStore store;
     private final AiService ai;
     private final JsonMapper mapper;
+    private final in.voltforge.api.ai.observability.AiTelemetry telemetry;
     private static final Set<String> PUBLIC_METADATA=Set.of("confidence","citations","grounding","uncertainty","mode","model","fallbackUsed","fallbackReasonCode","engineeringAuthority","internetRetrieval","localRetrieval");
     private ServerSentEvent<String> event(String type,Object value) { return ServerSentEvent.<String>builder(mapper.writeValueAsString(Map.of("type",type,"data",value))).event(type).build(); }
+    private ServerSentEvent<String> accepted(ConversationStore.Turn turn) {
+        var payload = new LinkedHashMap<String,Object>();
+        payload.put("type", "accepted"); payload.put("data", turn.user());
+        if (turn.attemptId() != null) payload.put("attemptId", turn.attemptId());
+        return ServerSentEvent.<String>builder(mapper.writeValueAsString(payload)).event("accepted").build();
+    }
     public Flux<ServerSentEvent<String>> stream(ConversationStore.Turn turn) {
-        if(turn.replay()) return Flux.just(event("accepted",turn.user()),event("saved",turn.assistant()));
+        if(turn.replay()) return Flux.just(accepted(turn),event("saved",turn.assistant()));
         var state=new State();
         return Flux.usingWhen(Mono.just(turn), ignored -> Flux.concat(
-            Flux.just(event("accepted",turn.user())),
+            Flux.just(accepted(turn)),
             ai.chatStream(turn.request()).timeout(Duration.ofSeconds(120)).takeUntilOther(Mono.delay(Duration.ofMinutes(3))).publishOn(Schedulers.boundedElastic())
                 .concatMap(e -> Mono.fromCallable(() -> { synchronized(state) { return process(turn,state,e); } }))
                 .concatMap(e -> state.terminal != null && !"saved".equals(e.event()) ? Flux.just(e,state.terminal) : Flux.just(e))
@@ -54,12 +61,13 @@ public class ConversationStream {
         }
         if(type.equals("error")) {
             String code=payload.path("code").asString("AI_STREAM_FAILED");
+            telemetry.recordFaultCode(code);
             if(code.matches("[A-Z0-9_]{1,80}")) state.metadata.put("errorCode",code);
             state.terminal=finish(turn,state,"failed"); return event;
         }
         if(state.content.length()>120000) return finish(turn,state,"failed");
         if(System.nanoTime()-state.lastCheckpoint>1_000_000_000L) {
-            var saved=store.checkpoint(turn,state.content.toString(),"pending",state.metadata);
+            var saved=checkpoint(turn,state,"pending");
             state.lastCheckpoint=System.nanoTime();
             if(!saved.status().equals("pending")) { state.finished=true; return event("saved",saved); }
         }
@@ -68,7 +76,12 @@ public class ConversationStream {
     private ServerSentEvent<String> finish(ConversationStore.Turn turn,State state,String status) {
         if("failed".equals(status)) state.metadata.putIfAbsent("errorCode","AI_STREAM_FAILED");
         if("interrupted".equals(status)) state.metadata.putIfAbsent("errorCode","AI_STREAM_INTERRUPTED");
-        var saved=store.checkpoint(turn,state.content.toString(),status,state.metadata); state.finished=true; return event("saved",saved);
+        var saved=checkpoint(turn,state,status); state.finished=true; return event("saved",saved);
+    }
+    private ConversationStore.Message checkpoint(ConversationStore.Turn turn, State state, String status) {
+        // The proxied store call includes transaction commit, unlike timing inside @Transactional.
+        return telemetry.measure(in.voltforge.api.ai.observability.AiTelemetry.Stage.PERSISTENCE,
+            () -> store.checkpoint(turn,state.content.toString(),status,state.metadata));
     }
     private static class State { final StringBuilder content=new StringBuilder(); final Map<String,Object> metadata=new HashMap<>(); long lastCheckpoint=System.nanoTime(); volatile boolean finished; ServerSentEvent<String> terminal; }
 }

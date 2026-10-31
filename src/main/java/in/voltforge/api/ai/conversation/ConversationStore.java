@@ -24,6 +24,7 @@ public class ConversationStore {
     private final AiGatewayPolicy policy;
     private final in.voltforge.api.ai.memory.UserMemoryService memory;
     private final in.voltforge.api.ai.document.DocumentService documents;
+    private final in.voltforge.api.ai.observability.AiTelemetry telemetry;
 
     public record Summary(String id, String projectId, String title, LocalDateTime createdAt, LocalDateTime updatedAt) {
         static Summary of(Conversation c) { return new Summary(c.getId(), c.getProjectId(), c.getTitle(), c.getCreatedAt(), c.getUpdatedAt()); }
@@ -139,7 +140,10 @@ public class ConversationStore {
         }
         request.setHistory(new ArrayList<>(contextHistory));
         request.setMemory(null); request.setRetrievedEvidence(null); policy.validateChatRequest(request);
-        request.setAuthorizedDocumentEvidence(documents.retrieve(subject,request.getProjectId(),research==null?List.of():research.documentIds(),user.getContent()));
+        final var retrievalRequest = request;
+        request.setAuthorizedDocumentEvidence(telemetry.measure(
+            in.voltforge.api.ai.observability.AiTelemetry.Stage.DOCUMENT_RETRIEVAL,
+            () -> documents.retrieve(subject,retrievalRequest.getProjectId(),research==null?List.of():research.documentIds(),user.getContent())));
         // Preference commands and their confirmation commit atomically with the transcript.
         var memoryReply=memory.command(subject,user.getContent());
         request.setApprovedUserPreferences(memory.list(subject));

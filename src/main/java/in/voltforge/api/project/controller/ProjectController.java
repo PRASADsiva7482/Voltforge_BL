@@ -78,9 +78,12 @@ public class ProjectController {
     @Operation(summary = "List current user's projects")
     public ResponseEntity<ApiResponse<PagedResponse<ProjectSummaryResponse>>> getUserProjects(
             @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) Boolean isPublic,
+            @RequestParam(defaultValue = "recent") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        PagedResponse<ProjectSummaryResponse> projects = projectService.getUserProjects(jwt.getSubject(), page, size);
+        PagedResponse<ProjectSummaryResponse> projects = projectService.getUserProjects(jwt.getSubject(), query, isPublic, sort, page, size);
         return ResponseEntity.ok(ApiResponse.success(projects));
     }
 

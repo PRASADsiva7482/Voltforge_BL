@@ -370,12 +370,17 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     @Transactional(readOnly = true)
-    public PagedResponse<ProjectSummaryResponse> getUserProjects(String keycloakId, int page, int size) {
+    public PagedResponse<ProjectSummaryResponse> getUserProjects(String keycloakId, String query, Boolean isPublic, String sort, int page, int size) {
         User user = userRepository.findByKeycloakId(keycloakId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "keycloakId", keycloakId));
 
-        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
-        Page<ProjectSummaryRow> projectPage = projectRepository.findByOwnerId(user.getId(), pageRequest);
+        Sort sortOrder = "name".equalsIgnoreCase(sort)
+                ? Sort.by(Sort.Direction.ASC, "name")
+                : Sort.by(Sort.Direction.DESC, "updatedAt");
+
+        PageRequest pageRequest = PageRequest.of(page, size, sortOrder);
+        String trimmedQuery = query != null && !query.trim().isEmpty() ? query.trim() : null;
+        Page<ProjectSummaryRow> projectPage = projectRepository.searchUserProjects(user.getId(), trimmedQuery, isPublic, pageRequest);
         return toPagedSummaryResponse(projectPage);
     }
 

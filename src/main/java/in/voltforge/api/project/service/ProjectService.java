@@ -26,7 +26,11 @@ public interface ProjectService {
 
     ProjectResponse forkProject(String projectId, String keycloakId);
 
-    PagedResponse<ProjectSummaryResponse> getUserProjects(String keycloakId, int page, int size);
+    default PagedResponse<ProjectSummaryResponse> getUserProjects(String keycloakId, int page, int size) {
+        return getUserProjects(keycloakId, null, null, "recent", page, size);
+    }
+
+    PagedResponse<ProjectSummaryResponse> getUserProjects(String keycloakId, String query, Boolean isPublic, String sort, int page, int size);
 
     PagedResponse<ProjectSummaryResponse> getPublicProjects(int page, int size);
 

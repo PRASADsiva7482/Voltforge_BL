@@ -32,6 +32,24 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
             countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId")
     Page<ProjectSummaryRow> findByOwnerId(@Param("ownerId") String ownerId, Pageable pageable);
 
+    @Query(value = SUMMARY_SELECT + " WHERE p.owner.id = :ownerId " +
+            "AND (:isPublic IS NULL OR p.isPublic = :isPublic) " +
+            "AND (:query IS NULL OR :query = '' OR " +
+            "LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId " +
+            "AND (:isPublic IS NULL OR p.isPublic = :isPublic) " +
+            "AND (:query IS NULL OR :query = '' OR " +
+            "LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<ProjectSummaryRow> searchUserProjects(
+            @Param("ownerId") String ownerId,
+            @Param("query") String query,
+            @Param("isPublic") Boolean isPublic,
+            Pageable pageable);
+
     @Query(value = SUMMARY_SELECT + " WHERE p.isPublic = true",
             countQuery = "SELECT COUNT(p) FROM Project p WHERE p.isPublic = true")
     Page<ProjectSummaryRow> findByIsPublicTrue(Pageable pageable);

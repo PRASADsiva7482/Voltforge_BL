@@ -56,7 +56,8 @@ public class SecurityConfig {
                         // ProjectService still checks is_public before returning
                         // the project, so anonymous GET access cannot expose a
                         // private project. Only the read endpoint is public.
-                        .requestMatchers(HttpMethod.GET, "/api/v1/projects/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/projects/*", "/api/v1/projects/*/code-files").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/*").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
